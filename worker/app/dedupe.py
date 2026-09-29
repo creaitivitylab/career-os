@@ -39,6 +39,12 @@ def rebuild_duplicate_candidates() -> dict[str, Any]:
                     join public.companies c
                         on c.id = j.company_id
                     where js.source_name = 'jooble_direct'
+		      and not exists (
+                          select 1
+                          from public.job_sources other
+                          where other.job_id = j.id
+                            and other.source_name = 'fantastic_jobs_apify'
+                      )
                 ),
 
                 fantastic as (
@@ -57,6 +63,12 @@ def rebuild_duplicate_candidates() -> dict[str, Any]:
                     join public.companies c
                         on c.id = j.company_id
                     where js.source_name = 'fantastic_jobs_apify'
+                        and not exists (
+                            select 1
+                            from public.job_sources other
+                            where other.job_id = j.id
+                              and other.source_name = 'jooble_direct'
+                        )
                 ),
 
                 scored as (

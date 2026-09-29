@@ -71,6 +71,7 @@ def ingest_jooble_search(
     keywords: str,
     location: str = "Czech Republic",
     page: int = 1,
+    results_per_page: int = 100,
 ) -> dict[str, Any]:
 
     database_url = os.environ["DATABASE_URL"]
@@ -100,6 +101,7 @@ def ingest_jooble_search(
                         "keywords": keywords,
                         "location": location,
                         "page": page,
+			"results_per_page": results_per_page,
                     }),
                 ),
             )
@@ -116,6 +118,7 @@ def ingest_jooble_search(
                     keywords=keywords,
                     location=location,
                     page=page,
+		    results_per_page=results_per_page,
                 )
 
                 payload = result["data"]
@@ -322,6 +325,7 @@ def ingest_jooble_search(
                     "page": page,
                     "total_count": payload.get("totalCount"),
                     "rate_limit": result.get("rate_limit"),
+		    "results_per_page": results_per_page,
                 }
 
                 cur.execute(
