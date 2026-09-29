@@ -1,0 +1,18 @@
+services:
+  web:
+    build:
+      context: ./web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NODE_ENV: production
+
+  worker:
+    build:
+      context: ./worker
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env

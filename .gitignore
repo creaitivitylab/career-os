@@ -1,0 +1,32 @@
+.env
+.env.*
+!.env.example
+
+node_modules/
+.next/
+
+__pycache__/
+*.pyc
+.venv/
+
+.DS_Store
+
+# Runtime
+logs/
+*.log
+
+# Backups
+*.bak
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+.next/
