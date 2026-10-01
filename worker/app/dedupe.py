@@ -48,7 +48,8 @@ def rebuild_duplicate_candidates() -> dict[str, Any]:
                         where other.job_id = j.id
                           and other.source_name in (
                               'fantastic_jobs_apify',
-                              'smartrecruiters_direct'
+                              'smartrecruiters_direct',
+                              'greenhouse_direct'
                           )
                     )
                 ),
@@ -70,7 +71,8 @@ def rebuild_duplicate_candidates() -> dict[str, Any]:
                             where js.job_id = j.id
                               and js.source_name in (
                                   'fantastic_jobs_apify',
-                                  'smartrecruiters_direct'
+                                  'smartrecruiters_direct',
+                              'greenhouse_direct'
                               )
                             order by js.source_name
                         ) as source_names
@@ -85,7 +87,8 @@ def rebuild_duplicate_candidates() -> dict[str, Any]:
                         where js.job_id = j.id
                           and js.source_name in (
                               'fantastic_jobs_apify',
-                              'smartrecruiters_direct'
+                              'smartrecruiters_direct',
+                              'greenhouse_direct'
                           )
                     )
 

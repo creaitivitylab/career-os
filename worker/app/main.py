@@ -16,6 +16,10 @@ from app.smartrecruiters_ingestion import (
     ingest_smartrecruiters_jobs,
 )
 
+from app.greenhouse_ingestion import (
+    ingest_greenhouse_jobs,
+)
+
 from app.dedupe import (
     rebuild_duplicate_candidates,
     get_safe_auto_merge_candidates,
@@ -54,6 +58,16 @@ class SmartRecruitersIngestionRequest(BaseModel):
     country: str = "cz"
 
     max_companies: int | None = Field(
+        default=None,
+        ge=1,
+        le=500,
+    )
+
+
+class GreenhouseIngestionRequest(BaseModel):
+    board_token: str | None = None
+
+    max_boards: int | None = Field(
         default=None,
         ge=1,
         le=500,
@@ -123,6 +137,16 @@ def ingest_smartrecruiters(
         ),
         country=request.country,
         max_companies=request.max_companies,
+    )
+
+
+@app.post("/ingest/ats/greenhouse")
+def ingest_greenhouse(
+    request: GreenhouseIngestionRequest
+):
+    return ingest_greenhouse_jobs(
+        board_token=request.board_token,
+        max_boards=request.max_boards,
     )
 
 
