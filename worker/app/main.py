@@ -12,6 +12,10 @@ from app.fantastic_ingestion import (
     ingest_fantastic_jobs,
 )
 
+from app.smartrecruiters_ingestion import (
+    ingest_smartrecruiters_jobs,
+)
+
 from app.dedupe import (
     rebuild_duplicate_candidates,
     get_safe_auto_merge_candidates,
@@ -44,6 +48,17 @@ class FantasticIngestionRequest(BaseModel):
         ge=10,
         le=5000,
     )
+
+class SmartRecruitersIngestionRequest(BaseModel):
+    company_identifier: str | None = None
+    country: str = "cz"
+
+    max_companies: int | None = Field(
+        default=None,
+        ge=1,
+        le=500,
+    )
+
 
 class DuplicateMergeRequest(BaseModel):
     candidate_id: str
@@ -97,6 +112,19 @@ def ingest_fantastic(
         location=request.location,
         limit=request.limit,
     )
+
+@app.post("/ingest/ats/smartrecruiters")
+def ingest_smartrecruiters(
+    request: SmartRecruitersIngestionRequest
+):
+    return ingest_smartrecruiters_jobs(
+        company_identifier=(
+            request.company_identifier
+        ),
+        country=request.country,
+        max_companies=request.max_companies,
+    )
+
 
 @app.post("/dedupe/merge")
 def dedupe_merge(

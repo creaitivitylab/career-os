@@ -15,12 +15,12 @@ def rebuild_duplicate_candidates() -> dict[str, Any]:
         with conn.cursor() as cur:
 
             cur.execute(
-                       """
-                       delete from public.duplicate_candidates
-                       where status = 'pending'
-                       """
-                   )
-    
+                """
+                delete from public.duplicate_candidates
+                where status = 'pending'
+                """
+            )
+
             cur.execute(
                 """
                 with jooble as (
@@ -34,20 +34,26 @@ def rebuild_duplicate_candidates() -> dict[str, Any]:
                         c.name as company,
                         c.normalized_name
                     from public.jobs j
-                    join public.job_sources js
-                        on js.job_id = j.id
                     join public.companies c
                         on c.id = j.company_id
-                    where js.source_name = 'jooble_direct'
-		      and not exists (
-                          select 1
-                          from public.job_sources other
-                          where other.job_id = j.id
-                            and other.source_name = 'fantastic_jobs_apify'
-                      )
+                    where exists (
+                        select 1
+                        from public.job_sources js
+                        where js.job_id = j.id
+                          and js.source_name = 'jooble_direct'
+                    )
+                    and not exists (
+                        select 1
+                        from public.job_sources other
+                        where other.job_id = j.id
+                          and other.source_name in (
+                              'fantastic_jobs_apify',
+                              'smartrecruiters_direct'
+                          )
+                    )
                 ),
 
-                fantastic as (
+                direct_jobs as (
                     select
                         j.id,
                         j.title,
@@ -56,63 +62,101 @@ def rebuild_duplicate_candidates() -> dict[str, Any]:
                         j.normalized_location,
                         j.location_text,
                         c.name as company,
-                        c.normalized_name
+                        c.normalized_name,
+
+                        array(
+                            select distinct js.source_name
+                            from public.job_sources js
+                            where js.job_id = j.id
+                              and js.source_name in (
+                                  'fantastic_jobs_apify',
+                                  'smartrecruiters_direct'
+                              )
+                            order by js.source_name
+                        ) as source_names
+
                     from public.jobs j
-                    join public.job_sources js
-                        on js.job_id = j.id
                     join public.companies c
                         on c.id = j.company_id
-                    where js.source_name = 'fantastic_jobs_apify'
-                        and not exists (
-                            select 1
-                            from public.job_sources other
-                            where other.job_id = j.id
-                              and other.source_name = 'jooble_direct'
-                        )
+
+                    where exists (
+                        select 1
+                        from public.job_sources js
+                        where js.job_id = j.id
+                          and js.source_name in (
+                              'fantastic_jobs_apify',
+                              'smartrecruiters_direct'
+                          )
+                    )
+
+                    and not exists (
+                        select 1
+                        from public.job_sources other
+                        where other.job_id = j.id
+                          and other.source_name = 'jooble_direct'
+                    )
                 ),
 
                 scored as (
                     select
                         j.id as job_a_id,
-                        f.id as job_b_id,
+                        d.id as job_b_id,
 
                         j.company,
 
                         j.title as jooble_title,
-                        f.title as fantastic_title,
+                        d.title as direct_title,
 
                         j.location_text as jooble_location,
-                        f.location_text as fantastic_location,
+                        d.location_text as direct_location,
+
+                        d.source_names,
 
                         similarity(
-                            coalesce(j.normalized_title, ''),
-                            coalesce(f.normalized_title, '')
+                            coalesce(
+                                j.normalized_title,
+                                ''
+                            ),
+                            coalesce(
+                                d.normalized_title,
+                                ''
+                            )
                         ) as title_similarity,
 
                         case
                             when
-                                coalesce(j.normalized_location, '') = ''
+                                coalesce(
+                                    j.normalized_location,
+                                    ''
+                                ) = ''
                                 or
-                                coalesce(f.normalized_location, '') = ''
+                                coalesce(
+                                    d.normalized_location,
+                                    ''
+                                ) = ''
                             then 0.50
 
                             when
                                 j.normalized_location =
-                                f.normalized_location
+                                d.normalized_location
                             then 1.00
 
                             when
-                                f.normalized_location like
-                                    '%' || j.normalized_location || '%'
+                                d.normalized_location like
+                                    '%' ||
+                                    j.normalized_location ||
+                                    '%'
                                 or
                                 j.normalized_location like
-                                    '%' || f.normalized_location || '%'
+                                    '%' ||
+                                    d.normalized_location ||
+                                    '%'
                             then 0.95
 
                             else greatest(
                                 similarity(
                                     j.normalized_location,
-                                    f.normalized_location
+                                    d.normalized_location
                                 ),
                                 0
                             )
@@ -121,19 +165,31 @@ def rebuild_duplicate_candidates() -> dict[str, Any]:
                         greatest(
                             similarity(
                                 public.normalize_job_text(
-                                    coalesce(j.description, '')
+                                    coalesce(
+                                        j.description,
+                                        ''
+                                    )
                                 ),
                                 public.normalize_job_text(
-                                    coalesce(f.description, '')
+                                    coalesce(
+                                        d.description,
+                                        ''
+                                    )
                                 )
                             ),
 
                             word_similarity(
                                 public.normalize_job_text(
-                                    coalesce(j.description, '')
+                                    coalesce(
+                                        j.description,
+                                        ''
+                                    )
                                 ),
                                 public.normalize_job_text(
-                                    coalesce(f.description, '')
+                                    coalesce(
+                                        d.description,
+                                        ''
+                                    )
                                 )
                             )
                         ) as description_similarity,
@@ -142,17 +198,26 @@ def rebuild_duplicate_candidates() -> dict[str, Any]:
                             when
                                 length(
                                     public.normalize_job_text(
-                                        coalesce(j.description, '')
+                                        coalesce(
+                                            j.description,
+                                            ''
+                                        )
                                     )
                                 ) >= 120
 
                                 and position(
                                     public.normalize_job_text(
-                                        coalesce(j.description, '')
+                                        coalesce(
+                                            j.description,
+                                            ''
+                                        )
                                     )
                                     in
                                     public.normalize_job_text(
-                                        coalesce(f.description, '')
+                                        coalesce(
+                                            d.description,
+                                            ''
+                                        )
                                     )
                                 ) > 0
 
@@ -161,10 +226,11 @@ def rebuild_duplicate_candidates() -> dict[str, Any]:
                         end as description_contained
 
                     from jooble j
-                    join fantastic f
-                        on f.normalized_name =
+
+                    join direct_jobs d
+                        on d.normalized_name =
                            j.normalized_name
-            and f.id <> j.id
+                       and d.id <> j.id
                 ),
 
                 final_scores as (
@@ -204,11 +270,24 @@ def rebuild_duplicate_candidates() -> dict[str, Any]:
                     confidence,
 
                     jsonb_build_object(
-                        'company', company,
-                        'jooble_title', jooble_title,
-                        'fantastic_title', fantastic_title,
-                        'jooble_location', jooble_location,
-                        'fantastic_location', fantastic_location,
+                        'company',
+                            company,
+
+                        'jooble_title',
+                            jooble_title,
+
+                        'direct_title',
+                            direct_title,
+
+                        'jooble_location',
+                            jooble_location,
+
+                        'direct_location',
+                            direct_location,
+
+                        'direct_sources',
+                            to_jsonb(source_names),
+
                         'description_contained',
                             description_contained
                     )

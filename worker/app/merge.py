@@ -6,7 +6,23 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 
-PREFERRED_SOURCE = "fantastic_jobs_apify"
+SOURCE_PRIORITY = {
+    "smartrecruiters_direct": 300,
+    "fantastic_jobs_apify": 200,
+    "jooble_direct": 100,
+}
+
+
+def source_priority(
+    sources: list[str],
+) -> int:
+    return max(
+        (
+            SOURCE_PRIORITY.get(source, 0)
+            for source in sources
+        ),
+        default=0,
+    )
 
 
 def merge_duplicate_candidate(
@@ -100,22 +116,22 @@ def merge_duplicate_candidate(
             sources_a = sources.get(job_a_id, [])
             sources_b = sources.get(job_b_id, [])
 
-            # Prefer direct employer / ATS dataset.
-            a_preferred = PREFERRED_SOURCE in sources_a
-            b_preferred = PREFERRED_SOURCE in sources_b
+            # Prefer the highest-quality direct source.
+            a_priority = source_priority(sources_a)
+            b_priority = source_priority(sources_b)
 
-            if a_preferred and not b_preferred:
+            if a_priority > b_priority:
                 keeper_id = job_a_id
                 removed_id = job_b_id
 
-            elif b_preferred and not a_preferred:
+            elif b_priority > a_priority:
                 keeper_id = job_b_id
                 removed_id = job_a_id
 
             else:
                 raise ValueError(
                     "Cannot automatically choose canonical job: "
-                    "preferred source is ambiguous"
+                    "source priority is ambiguous"
                 )
 
             keeper = jobs[keeper_id]
