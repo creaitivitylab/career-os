@@ -20,6 +20,10 @@ from app.greenhouse_ingestion import (
     ingest_greenhouse_jobs,
 )
 
+from app.workable_ingestion import (
+    ingest_workable_jobs,
+)
+
 from app.dedupe import (
     rebuild_duplicate_candidates,
     get_safe_auto_merge_candidates,
@@ -68,6 +72,16 @@ class GreenhouseIngestionRequest(BaseModel):
     board_token: str | None = None
 
     max_boards: int | None = Field(
+        default=None,
+        ge=1,
+        le=500,
+    )
+
+
+class WorkableIngestionRequest(BaseModel):
+    tenant_slug: str | None = None
+
+    max_companies: int | None = Field(
         default=None,
         ge=1,
         le=500,
@@ -147,6 +161,16 @@ def ingest_greenhouse(
     return ingest_greenhouse_jobs(
         board_token=request.board_token,
         max_boards=request.max_boards,
+    )
+
+
+@app.post("/ingest/ats/workable")
+def ingest_workable(
+    request: WorkableIngestionRequest
+):
+    return ingest_workable_jobs(
+        tenant_slug=request.tenant_slug,
+        max_companies=request.max_companies,
     )
 
 
