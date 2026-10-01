@@ -50,7 +50,8 @@ def rebuild_duplicate_candidates() -> dict[str, Any]:
                               'fantastic_jobs_apify',
                               'smartrecruiters_direct',
                               'greenhouse_direct',
-                              'workable_direct'
+                              'workable_direct',
+                              'ashby_direct'
                           )
                     )
                 ),
@@ -74,7 +75,8 @@ def rebuild_duplicate_candidates() -> dict[str, Any]:
                                   'fantastic_jobs_apify',
                                   'smartrecruiters_direct',
                               'greenhouse_direct',
-                              'workable_direct'
+                              'workable_direct',
+                              'ashby_direct'
                               )
                             order by js.source_name
                         ) as source_names
@@ -91,7 +93,8 @@ def rebuild_duplicate_candidates() -> dict[str, Any]:
                               'fantastic_jobs_apify',
                               'smartrecruiters_direct',
                               'greenhouse_direct',
-                              'workable_direct'
+                              'workable_direct',
+                              'ashby_direct'
                           )
                     )
 

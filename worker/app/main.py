@@ -24,6 +24,10 @@ from app.workable_ingestion import (
     ingest_workable_jobs,
 )
 
+from app.ashby_ingestion import (
+    ingest_ashby_jobs,
+)
+
 from app.dedupe import (
     rebuild_duplicate_candidates,
     get_safe_auto_merge_candidates,
@@ -82,6 +86,16 @@ class WorkableIngestionRequest(BaseModel):
     tenant_slug: str | None = None
 
     max_companies: int | None = Field(
+        default=None,
+        ge=1,
+        le=500,
+    )
+
+
+class AshbyIngestionRequest(BaseModel):
+    board_name: str | None = None
+
+    max_boards: int | None = Field(
         default=None,
         ge=1,
         le=500,
@@ -171,6 +185,16 @@ def ingest_workable(
     return ingest_workable_jobs(
         tenant_slug=request.tenant_slug,
         max_companies=request.max_companies,
+    )
+
+
+@app.post("/ingest/ats/ashby")
+def ingest_ashby(
+    request: AshbyIngestionRequest
+):
+    return ingest_ashby_jobs(
+        board_name=request.board_name,
+        max_boards=request.max_boards,
     )
 
 
