@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -29,6 +30,19 @@ class FantasticJobsApifyAdapter:
             "includeCompanyDetails": True,
             "populateAiRemoteLocationDerived": True,
         }
+
+        # For the daily 24h ingest, exclude old backlog jobs.
+        # Use yesterday's UTC DATE (not an exact timestamp),
+        # so jobs from yesterday + today are eligible.
+        if time_range == "24h":
+            yesterday_utc = (
+                datetime.now(timezone.utc).date()
+                - timedelta(days=1)
+            )
+
+            payload["datePostedAfter"] = (
+                yesterday_utc.isoformat()
+            )
 
         headers = {
             "Authorization": f"Bearer {self.token}",

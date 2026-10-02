@@ -7,6 +7,8 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
+from app.canonical import update_canonical_job
+
 from app.adapters.jooble import JoobleDirectAdapter
 
 
@@ -169,36 +171,18 @@ def ingest_jooble_search(
                         if existing_source:
                             source_id, job_id = existing_source
 
-                            cur.execute(
-                                """
-                                update public.jobs
-                                set
-                                    company_id = %s,
-                                    title = %s,
-                                    description = %s,
-                                    location_text = %s,
-                                    employment_type = %s,
-                                    salary_text = %s,
-                                    canonical_url = %s,
-                                    last_seen_at = %s,
-                                    last_verified_at = %s,
-                                    status = 'active',
-                                    updated_at = %s
-                                where id = %s
-                                """,
-                                (
-                                    company_id,
-                                    title,
-                                    description,
-                                    location_text,
-                                    employment_type,
-                                    salary_text,
-                                    source_url,
-                                    now,
-                                    now,
-                                    now,
-                                    job_id,
-                                ),
+                            update_canonical_job(
+                                cur, job_id, SOURCE_NAME,
+                                {
+                                    "company_id": company_id,
+                                    "title": title,
+                                    "description": description,
+                                    "location_text": location_text,
+                                    "employment_type": employment_type,
+                                    "salary_text": salary_text,
+                                    "canonical_url": source_url,
+                                },
+                                now,
                             )
 
                             cur.execute(

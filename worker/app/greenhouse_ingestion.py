@@ -5,9 +5,13 @@ import re
 import unicodedata
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import psycopg
 from psycopg.types.json import Jsonb
+
+from app.canonical import update_canonical_job
+from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
 
 from app.adapters.greenhouse import GreenhouseAdapter
 from app.ingestion import get_or_create_company
@@ -139,72 +143,91 @@ def discover_boards(
     ]
 
 
+def greenhouse_url_matches(
+    value: str | None,
+    board_token: str,
+    posting_id: str,
+    board_is_known: bool = False,
+) -> bool:
+    """Require an exact posting token and board, not an ID substring."""
+    if not value:
+        return False
+    try:
+        url = urlsplit(value.strip())
+        host = (url.hostname or "").casefold()
+        parts = unquote(url.path).strip("/").split("/")
+        query = parse_qs(url.query)
+    except ValueError:
+        return False
+
+    if url.scheme not in {"https", "http"}:
+        return False
+
+    native_host = host in {
+        "boards.greenhouse.io", "job-boards.greenhouse.io",
+        "boards.eu.greenhouse.io", "job-boards.eu.greenhouse.io",
+    }
+    if native_host:
+        if len(parts) == 3 and parts[1] == "jobs":
+            return parts[0].casefold() == board_token.casefold() and parts[2] == posting_id
+        if parts == ["embed", "job_app"]:
+            return (
+                {value.casefold() for value in query.get("for", [])}
+                == {board_token.casefold()}
+                and set(query.get("token", [])) == {posting_id}
+            )
+        return False
+
+    # Employer-hosted gh_jid URLs require independent board evidence.
+    return board_is_known and set(query.get("gh_jid", [])) == {posting_id}
+
+
 def find_existing_greenhouse_job(
     cur: psycopg.Cursor,
     board_token: str,
     posting_id: str,
 ) -> Any | None:
+    if not posting_id.isdigit():
+        return None
 
-    pattern = f"%{posting_id}%"
-
+    # Substrings only prefilter rows. Parsed URL/native ID checks below decide
+    # identity, and all evidence is combined before checking ambiguity.
     cur.execute(
         """
-        select js.job_id
+        select js.job_id, js.source_name, js.source_url, js.raw_payload
         from public.job_sources js
-        where js.source_name =
-                'fantastic_jobs_apify'
-          and js.raw_payload ->> 'source'
-                = 'greenhouse'
-          and js.raw_payload ->> 'source_slug'
-                = %s
-          and (
-                js.source_url ilike %s
-
-                or
-
+        where (
+            js.source_name = 'fantastic_jobs_apify'
+            and js.raw_payload ->> 'source' = 'greenhouse'
+            and js.raw_payload ->> 'source_slug' = %s
+            and (
                 js.raw_payload ->> 'id' = %s
-
-                or
-
-                js.raw_payload ->> 'job_id' = %s
-              )
-        limit 1
+                or js.raw_payload ->> 'job_id' = %s
+            )
+        ) or (
+            js.source_url ilike %s
+            and (js.source_url ilike '%%greenhouse%%'
+                 or js.source_url ilike '%%gh_jid=%%')
+        )
         """,
-        (
-            board_token,
-            pattern,
-            posting_id,
-            posting_id,
-        ),
+        (board_token, posting_id, posting_id, f"%{posting_id}%"),
     )
-
-    row = cur.fetchone()
-
-    if row:
-        return row[0]
-
-    cur.execute(
-        """
-        select js.job_id
-        from public.job_sources js
-        where js.source_url ilike %s
-          and (
-                js.source_url ilike %s
-                or
-                js.source_url ilike %s
-              )
-        limit 1
-        """,
-        (
-            pattern,
-            "%greenhouse%",
-            "%gh_jid=%",
-        ),
-    )
-
-    row = cur.fetchone()
-
-    return row[0] if row else None
+    matches = set()
+    for job_id, source_name, source_url, payload in cur.fetchall():
+        payload = payload or {}
+        board_is_known = (
+            source_name == "fantastic_jobs_apify"
+            and payload.get("source") == "greenhouse"
+            and payload.get("source_slug") == board_token
+        )
+        native_id_matches = board_is_known and posting_id in {
+            str(payload.get("id", "")), str(payload.get("job_id", "")),
+        }
+        if native_id_matches or greenhouse_url_matches(
+            source_url, board_token, posting_id, board_is_known
+        ):
+            matches.add(job_id)
+    return next(iter(matches)) if len(matches) == 1 else None
 
 
 def ingest_greenhouse_jobs(
@@ -261,6 +284,7 @@ def ingest_greenhouse_jobs(
             attached = 0
             updated = 0
             failed = 0
+            successful_tenants = 0
 
             board_errors = []
 
@@ -280,6 +304,7 @@ def ingest_greenhouse_jobs(
                         })
                         continue
 
+                    details_before = details_loaded
                     fetched += len(jobs)
 
                     czech_jobs = [
@@ -498,56 +523,21 @@ def ingest_greenhouse_jobs(
 
                         if not new_job:
 
-                            cur.execute(
-                                """
-                                update public.jobs
-                                set
-                                    company_id = %s,
-                                    title = %s,
-                                    description = %s,
-                                    location_text = %s,
-                                    country_code = 'CZ',
-                                    remote_type = %s,
-
-                                    salary_text =
-                                        coalesce(
-                                            %s,
-                                            salary_text
-                                        ),
-
-                                    canonical_url =
-                                        coalesce(
-                                            %s,
-                                            canonical_url
-                                        ),
-
-                                    published_at =
-                                        coalesce(
-                                            %s,
-                                            published_at
-                                        ),
-
-                                    last_seen_at = %s,
-                                    last_verified_at = %s,
-                                    status = 'active',
-                                    updated_at = %s
-
-                                where id = %s
-                                """,
-                                (
-                                    company_id,
-                                    title,
-                                    description,
-                                    location_text,
-                                    remote_type,
-                                    salary_text,
-                                    source_url,
-                                    published_at,
-                                    now,
-                                    now,
-                                    now,
-                                    job_id,
-                                ),
+                            update_canonical_job(
+                                cur, job_id, SOURCE_NAME,
+                                {
+                                    "company_id": company_id,
+                                    "title": title,
+                                    "description": description,
+                                    "location_text": location_text,
+                                    "country_code": "CZ",
+                                    "remote_type": remote_type,
+                                    "salary_text": salary_text,
+                                    "canonical_url": source_url,
+                                    "published_at": published_at,
+                                },
+                                now,
+                                preserve_if_none=('salary_text', 'canonical_url', 'published_at'),
                             )
 
                         raw_payload = dict(
@@ -631,22 +621,37 @@ def ingest_greenhouse_jobs(
                             elif attached_job:
                                 attached += 1
 
+                    if not czech_jobs or details_loaded > details_before:
+                        successful_tenants += 1
+                    else:
+                        board_errors.append(
+                            {"board": board, "error": "No Czech posting details could be loaded"}
+                        )
+
+                run_status = direct_run_status(len(boards), successful_tenants)
+                run_error = ALL_TENANTS_FAILED if run_status == "failed" else None
+
                 cur.execute(
                     """
                     update public.ingestion_runs
                     set
                         finished_at = now(),
-                        status = 'success',
+                        status = %s,
+                        error_message = %s,
                         records_fetched = %s,
                         records_created = %s,
                         records_updated = %s,
+                        records_failed = %s,
                         metadata = %s
                     where id = %s
                     """,
                     (
+                        run_status,
+                        run_error,
                         fetched,
                         created,
                         updated + attached,
+                        failed,
                         Jsonb({
                             "board_token":
                                 board_token,
@@ -656,6 +661,7 @@ def ingest_greenhouse_jobs(
                                 czech_matched,
                             "details_loaded":
                                 details_loaded,
+                            "successful_tenants": successful_tenants,
                             "attached":
                                 attached,
                             "failed":
@@ -670,7 +676,7 @@ def ingest_greenhouse_jobs(
                 conn.commit()
 
                 return {
-                    "status": "success",
+                    "status": run_status,
                     "run_id": str(run_id),
                     "boards": len(boards),
                     "fetched": fetched,

@@ -8,6 +8,8 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
+from app.canonical import update_canonical_job
+
 from app.adapters.fantastic_jobs import FantasticJobsApifyAdapter
 from app.ingestion import get_or_create_company
 
@@ -254,45 +256,23 @@ def ingest_fantastic_jobs(
                             existing_source
                         )
 
-                        cur.execute(
-                            """
-                            update public.jobs
-                            set
-                                company_id = %s,
-                                title = %s,
-                                description = %s,
-                                location_text = %s,
-                                country_code = 'CZ',
-                                remote_type = %s,
-                                employment_type = %s,
-                                salary_text = %s,
-                                skills = %s,
-                                canonical_url = %s,
-                                published_at = %s,
-                                expires_at = %s,
-                                last_seen_at = %s,
-                                last_verified_at = %s,
-                                status = 'active',
-                                updated_at = %s
-                            where id = %s
-                            """,
-                            (
-                                company_id,
-                                title,
-                                description,
-                                location_text,
-                                remote_type,
-                                employment_type,
-                                salary_text,
-                                Jsonb(skills),
-                                source_url,
-                                published_at,
-                                expires_at,
-                                now,
-                                now,
-                                now,
-                                job_id,
-                            ),
+                        update_canonical_job(
+                            cur, job_id, SOURCE_NAME,
+                            {
+                                "company_id": company_id,
+                                "title": title,
+                                "description": description,
+                                "location_text": location_text,
+                                "country_code": "CZ",
+                                "remote_type": remote_type,
+                                "employment_type": employment_type,
+                                "salary_text": salary_text,
+                                "skills": skills,
+                                "canonical_url": source_url,
+                                "published_at": published_at,
+                                "expires_at": expires_at,
+                            },
+                            now,
                         )
 
                         cur.execute(

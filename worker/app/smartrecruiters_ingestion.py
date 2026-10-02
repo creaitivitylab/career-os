@@ -9,6 +9,9 @@ from urllib.parse import urlsplit
 import psycopg
 from psycopg.types.json import Jsonb
 
+from app.canonical import update_canonical_job
+from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
+
 from app.adapters.smartrecruiters import (
     SmartRecruitersAdapter,
 )
@@ -173,7 +176,7 @@ def find_existing_job_by_url(
 
     cur.execute(
         """
-        select j.id
+        select distinct j.id
         from public.jobs j
 
         left join public.job_sources js
@@ -183,10 +186,7 @@ def find_existing_job_by_url(
             lower(
                 rtrim(
                     split_part(
-                        coalesce(
-                            js.source_url,
-                            ''
-                        ),
+                        split_part(btrim(coalesce(js.source_url, '')), '#', 1),
                         '?',
                         1
                     ),
@@ -199,10 +199,7 @@ def find_existing_job_by_url(
             lower(
                 rtrim(
                     split_part(
-                        coalesce(
-                            j.canonical_url,
-                            ''
-                        ),
+                        split_part(btrim(coalesce(j.canonical_url, '')), '#', 1),
                         '?',
                         1
                     ),
@@ -210,7 +207,7 @@ def find_existing_job_by_url(
                 )
             ) = %s
 
-        limit 1
+        limit 2
         """,
         (
             normalized,
@@ -218,9 +215,8 @@ def find_existing_job_by_url(
         ),
     )
 
-    row = cur.fetchone()
-
-    return row[0] if row else None
+    matches = {row[0] for row in cur.fetchall()}
+    return next(iter(matches)) if len(matches) == 1 else None
 
 
 def ingest_smartrecruiters_jobs(
@@ -284,6 +280,7 @@ def ingest_smartrecruiters_jobs(
             attached = 0
             updated = 0
             failed = 0
+            successful_tenants = 0
 
             tenant_errors = []
 
@@ -309,6 +306,7 @@ def ingest_smartrecruiters_jobs(
 
                         continue
 
+                    processed_before = created + attached + updated
                     fetched += len(postings)
 
                     for posting in postings:
@@ -534,47 +532,22 @@ def ingest_smartrecruiters_jobs(
 
                         if not new_job:
 
-                            cur.execute(
-                                """
-                                update public.jobs
-                                set
-                                    company_id = %s,
-                                    title = %s,
-                                    description = %s,
-                                    location_text = %s,
-                                    country_code = 'CZ',
-                                    remote_type = %s,
-                                    employment_type = %s,
-                                    salary_text =
-                                        coalesce(%s, salary_text),
-                                    canonical_url =
-                                        coalesce(%s, canonical_url),
-                                    published_at =
-                                        coalesce(
-                                            %s,
-                                            published_at
-                                        ),
-                                    last_seen_at = %s,
-                                    last_verified_at = %s,
-                                    status = 'active',
-                                    updated_at = %s
-                                where id = %s
-                                """,
-                                (
-                                    company_id,
-                                    title,
-                                    description,
-                                    location_text,
-                                    remote_type,
-                                    employment_type,
-                                    salary_text,
-                                    source_url,
-                                    published_at,
-                                    now,
-                                    now,
-                                    now,
-                                    job_id,
-                                ),
+                            update_canonical_job(
+                                cur, job_id, SOURCE_NAME,
+                                {
+                                    "company_id": company_id,
+                                    "title": title,
+                                    "description": description,
+                                    "location_text": location_text,
+                                    "country_code": "CZ",
+                                    "remote_type": remote_type,
+                                    "employment_type": employment_type,
+                                    "salary_text": salary_text,
+                                    "canonical_url": source_url,
+                                    "published_at": published_at,
+                                },
+                                now,
+                                preserve_if_none=('salary_text', 'canonical_url', 'published_at'),
                             )
 
                         raw_payload = dict(raw_job)
@@ -652,22 +625,37 @@ def ingest_smartrecruiters_jobs(
                             elif attached_job:
                                 attached += 1
 
+                    if not postings or created + attached + updated > processed_before:
+                        successful_tenants += 1
+                    else:
+                        tenant_errors.append(
+                            {"tenant": tenant, "error": "No postings could be processed"}
+                        )
+
+                run_status = direct_run_status(len(tenants), successful_tenants)
+                run_error = ALL_TENANTS_FAILED if run_status == "failed" else None
+
                 cur.execute(
                     """
                     update public.ingestion_runs
                     set
                         finished_at = now(),
-                        status = 'success',
+                        status = %s,
+                        error_message = %s,
                         records_fetched = %s,
                         records_created = %s,
                         records_updated = %s,
+                        records_failed = %s,
                         metadata = %s
                     where id = %s
                     """,
                     (
+                        run_status,
+                        run_error,
                         fetched,
                         created,
                         updated + attached,
+                        failed,
                         Jsonb({
                             "country": country,
                             "company_identifier":
@@ -676,6 +664,7 @@ def ingest_smartrecruiters_jobs(
                                 len(tenants),
                             "details_loaded":
                                 details_loaded,
+                            "successful_tenants": successful_tenants,
                             "attached":
                                 attached,
                             "failed":
@@ -690,7 +679,7 @@ def ingest_smartrecruiters_jobs(
                 conn.commit()
 
                 return {
-                    "status": "success",
+                    "status": run_status,
                     "run_id": str(run_id),
                     "tenants": len(tenants),
                     "fetched": fetched,

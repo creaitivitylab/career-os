@@ -3,6 +3,7 @@ from typing import Literal
 
 import psycopg
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.merge import merge_duplicate_candidate
@@ -107,6 +108,12 @@ class DuplicateMergeRequest(BaseModel):
     dry_run: bool = True
 
 
+def direct_ingestion_response(result: dict):
+    if result.get("status") == "failed":
+        return JSONResponse(status_code=502, content=result)
+    return result
+
+
 @app.get("/health")
 def health():
     return {
@@ -159,43 +166,47 @@ def ingest_fantastic(
 def ingest_smartrecruiters(
     request: SmartRecruitersIngestionRequest
 ):
-    return ingest_smartrecruiters_jobs(
+    result = ingest_smartrecruiters_jobs(
         company_identifier=(
             request.company_identifier
         ),
         country=request.country,
         max_companies=request.max_companies,
     )
+    return direct_ingestion_response(result)
 
 
 @app.post("/ingest/ats/greenhouse")
 def ingest_greenhouse(
     request: GreenhouseIngestionRequest
 ):
-    return ingest_greenhouse_jobs(
+    result = ingest_greenhouse_jobs(
         board_token=request.board_token,
         max_boards=request.max_boards,
     )
+    return direct_ingestion_response(result)
 
 
 @app.post("/ingest/ats/workable")
 def ingest_workable(
     request: WorkableIngestionRequest
 ):
-    return ingest_workable_jobs(
+    result = ingest_workable_jobs(
         tenant_slug=request.tenant_slug,
         max_companies=request.max_companies,
     )
+    return direct_ingestion_response(result)
 
 
 @app.post("/ingest/ats/ashby")
 def ingest_ashby(
     request: AshbyIngestionRequest
 ):
-    return ingest_ashby_jobs(
+    result = ingest_ashby_jobs(
         board_name=request.board_name,
         max_boards=request.max_boards,
     )
+    return direct_ingestion_response(result)
 
 
 @app.post("/dedupe/merge")

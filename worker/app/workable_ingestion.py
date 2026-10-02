@@ -9,6 +9,9 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
+from app.canonical import update_canonical_job
+from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
+
 from app.adapters.workable import WorkableAdapter
 from app.ingestion import get_or_create_company
 
@@ -574,6 +577,7 @@ def ingest_workable_jobs(
             attached = 0
             updated = 0
             failed = 0
+            successful_tenants = 0
 
             ambiguous_exact_matches = 0
             tenant_errors = []
@@ -605,6 +609,8 @@ def ingest_workable_jobs(
 
                         continue
 
+                    processed_before = created + attached + updated
+
                     jobs = (
                         account.get("jobs")
                         or []
@@ -613,6 +619,12 @@ def ingest_workable_jobs(
                     raw_rows += len(
                         jobs
                     )
+
+                    unidentified_czech = sum(
+                        1 for job in jobs
+                        if not job.get("shortcode") and is_czech_variant(job)
+                    )
+                    failed += unidentified_czech
 
                     all_groups = (
                         group_jobs(jobs)
@@ -890,55 +902,20 @@ def ingest_workable_jobs(
 
                         if not new_job:
 
-                            cur.execute(
-                                """
-                                update public.jobs
-                                set
-                                    company_id = %s,
-                                    title = %s,
-
-                                    description =
-                                        coalesce(
-                                            %s,
-                                            description
-                                        ),
-
-                                    location_text = %s,
-                                    country_code = 'CZ',
-                                    remote_type = %s,
-
-                                    canonical_url =
-                                        coalesce(
-                                            %s,
-                                            canonical_url
-                                        ),
-
-                                    published_at =
-                                        coalesce(
-                                            %s,
-                                            published_at
-                                        ),
-
-                                    last_seen_at = %s,
-                                    last_verified_at = %s,
-                                    status = 'active',
-                                    updated_at = %s
-
-                                where id = %s
-                                """,
-                                (
-                                    company_id,
-                                    title,
-                                    description,
-                                    location_text,
-                                    work_mode,
-                                    source_url,
-                                    published_at,
-                                    now,
-                                    now,
-                                    now,
-                                    job_id,
-                                ),
+                            update_canonical_job(
+                                cur, job_id, SOURCE_NAME,
+                                {
+                                    "company_id": company_id,
+                                    "title": title,
+                                    "description": description,
+                                    "location_text": location_text,
+                                    "country_code": "CZ",
+                                    "remote_type": work_mode,
+                                    "canonical_url": source_url,
+                                    "published_at": published_at,
+                                },
+                                now,
+                                preserve_if_none=('description', 'canonical_url', 'published_at'),
                             )
 
                         raw_payload = dict(
@@ -1046,22 +1023,40 @@ def ingest_workable_jobs(
                             elif attached_job:
                                 attached += 1
 
+                    if (
+                        (not groups and not unidentified_czech)
+                        or created + attached + updated > processed_before
+                    ):
+                        successful_tenants += 1
+                    else:
+                        tenant_errors.append(
+                            {"tenant_slug": slug, "company": company_name, "error": "No postings could be processed"}
+                        )
+
+                run_status = direct_run_status(len(tenants), successful_tenants)
+                run_error = ALL_TENANTS_FAILED if run_status == "failed" else None
+
                 cur.execute(
                     """
                     update public.ingestion_runs
                     set
                         finished_at = now(),
-                        status = 'success',
+                        status = %s,
+                        error_message = %s,
                         records_fetched = %s,
                         records_created = %s,
                         records_updated = %s,
+                        records_failed = %s,
                         metadata = %s
                     where id = %s
                     """,
                     (
+                        run_status,
+                        run_error,
                         raw_rows,
                         created,
                         updated + attached,
+                        failed,
                         Jsonb({
                             "tenant_slug":
                                 tenant_slug,
@@ -1071,6 +1066,7 @@ def ingest_workable_jobs(
                                 unique_jobs,
                             "czech_jobs":
                                 czech_jobs,
+                            "successful_tenants": successful_tenants,
                             "attached":
                                 attached,
                             "ambiguous_exact_matches":
@@ -1088,7 +1084,7 @@ def ingest_workable_jobs(
 
                 return {
                     "status":
-                        "success",
+                        run_status,
 
                     "run_id":
                         str(run_id),
