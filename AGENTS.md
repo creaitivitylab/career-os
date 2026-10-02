@@ -40,8 +40,9 @@ Current important sources:
 - `greenhouse_direct`
 - `workable_direct`
 - `ashby_direct`
+- `lever_direct`
 
-Existing direct ATS adapters should be used as implementation patterns.
+Existing SmartRecruiters, Greenhouse, Workable, Ashby and Lever adapters should be used as implementation patterns.
 
 Relevant files include:
 
@@ -51,6 +52,8 @@ Relevant files include:
 - `worker/app/greenhouse_ingestion.py`
 - `worker/app/workable_ingestion.py`
 - `worker/app/ashby_ingestion.py`
+- `worker/app/adapters/lever.py`
+- `worker/app/lever_ingestion.py`
 - `worker/app/dedupe.py`
 - `worker/app/merge.py`
 - `worker/app/main.py`

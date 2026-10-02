@@ -298,12 +298,13 @@ class DedupeTests(OfflineTest):
                     tuple(SOURCE_PRIORITY))
         return cur.fetchall()
 
-    def test_all_six_sources_are_compared_without_self_or_reversed_pairs(self):
+    def test_all_supported_sources_are_compared_without_self_or_reversed_pairs(self):
         for i, source in enumerate(SOURCE_PRIORITY):
             self.job(str(i), [source])
         pairs = self.pairs()
-        self.assertEqual(len(pairs), 15)
-        self.assertEqual(len(set(pairs)), 15)
+        expected = len(SOURCE_PRIORITY) * (len(SOURCE_PRIORITY) - 1) // 2
+        self.assertEqual(len(pairs), expected)
+        self.assertEqual(len(set(pairs)), expected)
         self.assertTrue(all(a < b for a, b in pairs))
         self.assertTrue(all((b, a) not in pairs for a, b in pairs))
 

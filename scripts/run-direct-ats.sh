@@ -64,6 +64,12 @@ run_source \
     || FAILED=$((FAILED + 1))
 
 
+run_source \
+    "Lever" \
+    "/ingest/ats/lever" \
+    || FAILED=$((FAILED + 1))
+
+
 echo
 echo "=================================================="
 echo "DIRECT ATS RUN COMPLETE"

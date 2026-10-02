@@ -2,7 +2,7 @@ import os
 from typing import Literal
 
 import psycopg
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -28,6 +28,8 @@ from app.workable_ingestion import (
 from app.ashby_ingestion import (
     ingest_ashby_jobs,
 )
+
+from app.lever_ingestion import ingest_lever_jobs
 
 from app.dedupe import (
     rebuild_duplicate_candidates,
@@ -106,6 +108,13 @@ class AshbyIngestionRequest(BaseModel):
 class DuplicateMergeRequest(BaseModel):
     candidate_id: str
     dry_run: bool = True
+
+
+class LeverIngestionRequest(BaseModel):
+    site: str | None = Field(default=None, min_length=1, max_length=200,
+                             pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+    instance: Literal["global", "eu"] | None = None
+    max_sites: int | None = Field(default=None, ge=1, le=500)
 
 
 def direct_ingestion_response(result: dict):
@@ -217,6 +226,16 @@ def dedupe_merge(
         candidate_id=request.candidate_id,
         dry_run=request.dry_run,
     )
+
+
+@app.post("/ingest/ats/lever")
+def ingest_lever(request: LeverIngestionRequest):
+    try:
+        result = ingest_lever_jobs(site=request.site, instance=request.instance,
+                                   max_sites=request.max_sites)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return direct_ingestion_response(result)
 
 @app.post("/dedupe/rebuild")
 def dedupe_rebuild():
