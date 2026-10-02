@@ -41,8 +41,9 @@ Current important sources:
 - `workable_direct`
 - `ashby_direct`
 - `lever_direct`
+- `workday_direct`
 
-Existing SmartRecruiters, Greenhouse, Workable, Ashby and Lever adapters should be used as implementation patterns.
+Existing SmartRecruiters, Greenhouse, Workable, Ashby, Lever and Workday adapters should be used as implementation patterns.
 
 Relevant files include:
 
@@ -54,6 +55,8 @@ Relevant files include:
 - `worker/app/ashby_ingestion.py`
 - `worker/app/adapters/lever.py`
 - `worker/app/lever_ingestion.py`
+- `worker/app/adapters/workday.py`
+- `worker/app/workday_ingestion.py`
 - `worker/app/dedupe.py`
 - `worker/app/merge.py`
 - `worker/app/main.py`
@@ -96,6 +99,15 @@ Deterministic attachment examples include:
 Do NOT use fuzzy title matching as an automatic attachment mechanism unless the existing implementation explicitly defines a conservative, reviewed rule.
 
 If deterministic attachment is unavailable, create a separate canonical job and allow the dedupe engine to identify a candidate later.
+
+Workday discovers host/tenant/case-sensitive career-site scopes from Fantastic Workday URLs.
+Its native posting ID is not interchangeable with `jobReqId`; use the native posting ID for source identity.
+For Czech candidate discovery, OR all Czech country/city values within each geography facet, query different facet dimensions separately, and union normalized job paths before fetching details.
+Country-labeled facets may omit city buckets or return no jobs, so retain all relevant dimensions.
+Final eligibility still requires primary country CZ or a clearly Czech additional location.
+Without a usable Czech geography facet, traverse listings conservatively and prune only explicit foreign single locations.
+Use 20-record pages and actual returned lengths; ignore misleading subsequent totals and retain stalled-page/page-limit protection.
+Accept an out-of-range page reset only after the advertised boundary is independently confirmed by the exact short tail; count pathless listing stubs without inventing URLs.
 
 ## Dedupe and merge safety
 

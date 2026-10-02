@@ -30,6 +30,7 @@ from app.ashby_ingestion import (
 )
 
 from app.lever_ingestion import ingest_lever_jobs
+from app.workday_ingestion import ingest_workday_jobs
 
 from app.dedupe import (
     rebuild_duplicate_candidates,
@@ -114,6 +115,16 @@ class LeverIngestionRequest(BaseModel):
     site: str | None = Field(default=None, min_length=1, max_length=200,
                              pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
     instance: Literal["global", "eu"] | None = None
+    max_sites: int | None = Field(default=None, ge=1, le=500)
+
+
+class WorkdayIngestionRequest(BaseModel):
+    host: str | None = Field(default=None, min_length=1, max_length=253)
+    tenant: str | None = Field(default=None, min_length=1, max_length=200,
+                               pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+    site: str | None = Field(default=None, min_length=1, max_length=200,
+                             pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+    locale: str | None = Field(default=None, pattern=r"^[a-z]{2}(?:-[A-Z]{2})?$")
     max_sites: int | None = Field(default=None, ge=1, le=500)
 
 
@@ -236,6 +247,16 @@ def ingest_lever(request: LeverIngestionRequest):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return direct_ingestion_response(result)
+
+@app.post("/ingest/ats/workday")
+def ingest_workday(request: WorkdayIngestionRequest):
+    try:
+        result = ingest_workday_jobs(host=request.host, tenant=request.tenant, site=request.site,
+                                     max_sites=request.max_sites, locale=request.locale)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return direct_ingestion_response(result)
+
 
 @app.post("/dedupe/rebuild")
 def dedupe_rebuild():

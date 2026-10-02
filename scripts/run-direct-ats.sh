@@ -70,6 +70,12 @@ run_source \
     || FAILED=$((FAILED + 1))
 
 
+run_source \
+    "Workday" \
+    "/ingest/ats/workday" \
+    || FAILED=$((FAILED + 1))
+
+
 echo
 echo "=================================================="
 echo "DIRECT ATS RUN COMPLETE"

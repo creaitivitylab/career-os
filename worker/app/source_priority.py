@@ -7,6 +7,7 @@ SOURCE_PRIORITY = {
     "workable_direct": 300,
     "ashby_direct": 300,
     "lever_direct": 300,
+    "workday_direct": 300,
     "fantastic_jobs_apify": 200,
     "jooble_direct": 100,
 }
