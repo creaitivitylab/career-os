@@ -103,7 +103,13 @@ class FakeCursor:
         normalized = " ".join(query.split())
         self.calls.append((normalized, params))
         self.rows = []
-        if normalized.startswith("insert into public.ingestion_runs"):
+        if normalized.startswith("select pg_try_advisory_xact_lock"):
+            self.rows = [(True,)]
+        elif normalized.startswith(("select source_job_id, job_id, is_active", "select id from public.jobs")):
+            self.rows = []
+        elif normalized.startswith("update public.jobs j set status = case"):
+            pass  # Activity semantics have a stateful fake in test_lifecycle.
+        elif normalized.startswith("insert into public.ingestion_runs"):
             self.rows = [("run-id",)]
         elif normalized.startswith("select id from public.companies"):
             self.rows = [("company",)]
@@ -189,7 +195,7 @@ class CanonicalPriorityTests(OfflineTest):
         self.assertIn("select source_name", cur.calls[1][0])
         self.assertEqual(cur.canonical_writes, [{
             "last_seen_at": now, "last_verified_at": now,
-            "status": "active", "updated_at": now,
+            "updated_at": now,
         }])
 
     def test_helper_wraps_skills_as_json_and_rejects_unknown_fields(self):

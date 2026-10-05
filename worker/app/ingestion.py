@@ -8,6 +8,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from app.canonical import update_canonical_job
+from app.lifecycle import refresh_job_activity
 
 from app.adapters.jooble import JoobleDirectAdapter
 
@@ -126,6 +127,7 @@ def ingest_jooble_search(
                 payload = result["data"]
                 jobs = payload.get("jobs", [])
 
+                touched_jobs = set()
                 for raw_job in jobs:
                     try:
                         source_job_id = str(raw_job["id"])
@@ -300,8 +302,12 @@ def ingest_jooble_search(
 
                             created += 1
 
+                        touched_jobs.add(job_id)
+
                     except Exception:
                         failed += 1
+
+                refresh_job_activity(cur, touched_jobs)
 
                 metadata = {
                     "keywords": keywords,

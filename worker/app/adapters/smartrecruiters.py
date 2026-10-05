@@ -18,10 +18,15 @@ class SmartRecruitersAdapter:
 
         limit = 100
         offset = 0
+        seen = set()
+        pages = 0
 
         with httpx.Client(timeout=60.0) as client:
 
             while True:
+                pages += 1
+                if pages > 1000:
+                    raise RuntimeError("SmartRecruiters pagination safety limit reached")
 
                 url = (
                     f"{self.BASE_URL}/"
@@ -50,23 +55,28 @@ class SmartRecruitersAdapter:
 
                 data = response.json()
 
-                content = data.get("content") or []
-
+                if not isinstance(data, dict):
+                    raise RuntimeError("Unexpected SmartRecruiters inventory")
+                content, total = data.get("content"), data.get("totalFound")
+                if (not isinstance(content, list) or type(total) is not int or total < 0
+                        or any(not isinstance(job, dict) or not job.get("id") for job in content)):
+                    raise RuntimeError("Incomplete SmartRecruiters inventory metadata")
+                identities = {str(job["id"]) for job in content}
+                if content and (len(identities) != len(content) or identities & seen):
+                    raise RuntimeError("SmartRecruiters pagination repeated identities")
+                seen.update(identities)
                 jobs.extend(content)
 
-                total = int(
-                    data.get(
-                        "totalFound",
-                        len(jobs),
-                    )
-                )
-
                 if not content:
+                    if len(jobs) != total:
+                        raise RuntimeError("SmartRecruiters empty page contradicts native total")
                     break
 
                 offset += len(content)
 
                 if offset >= total:
+                    if offset != total:
+                        raise RuntimeError("SmartRecruiters listing count contradicts native total")
                     break
 
         return jobs

@@ -39,12 +39,16 @@ class GreenhouseAdapter:
 
         data = response.json()
 
-        jobs = data.get("jobs") or []
+        jobs = data.get("jobs")
 
-        if not isinstance(jobs, list):
+        if not isinstance(jobs, list) or any(not isinstance(job, dict) for job in jobs):
             raise RuntimeError(
                 "Unexpected Greenhouse jobs response"
             )
+
+        meta = data.get("meta")
+        if isinstance(meta, dict) and "total" in meta and meta["total"] != len(jobs):
+            raise RuntimeError("Greenhouse inventory count contradicts returned jobs")
 
         return jobs
 

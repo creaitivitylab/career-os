@@ -10,6 +10,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from app.canonical import update_canonical_job
+from app.lifecycle import LifecycleRun, InventoryCompletion
 from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
 
 from app.adapters.workable import WorkableAdapter
@@ -584,10 +585,14 @@ def ingest_workable_jobs(
 
             try:
 
+                lifecycle = LifecycleRun(cur, SOURCE_NAME, run_id)
+
                 for (
                     company_name,
                     slug,
                 ) in tenants:
+                    inventory = lifecycle.scope(slug)
+                    failed_before = failed
 
                     try:
                         account = (
@@ -607,6 +612,7 @@ def ingest_workable_jobs(
                                 str(exc),
                         })
 
+                        inventory.finish(InventoryCompletion(False, False, "listing request failed"))
                         continue
 
                     processed_before = created + attached + updated
@@ -1023,6 +1029,14 @@ def ingest_workable_jobs(
                             elif attached_job:
                                 attached += 1
 
+                    observed_ids = [(f"{slug}:{p['shortcode']}" if p.get("shortcode") else None) for p in jobs]
+                    for identity in observed_ids:
+                        if identity is not None:
+                            inventory.observe(identity)
+                    complete = failed == failed_before and all(i is not None for i in observed_ids)
+                    inventory.finish(InventoryCompletion(True, complete,
+                        "complete native account inventory" if complete else "partial native records"))
+
                     if (
                         (not groups and not unidentified_czech)
                         or created + attached + updated > processed_before
@@ -1067,6 +1081,7 @@ def ingest_workable_jobs(
                             "czech_jobs":
                                 czech_jobs,
                             "successful_tenants": successful_tenants,
+                            "lifecycle": lifecycle.summary(),
                             "attached":
                                 attached,
                             "ambiguous_exact_matches":
@@ -1083,6 +1098,7 @@ def ingest_workable_jobs(
                 conn.commit()
 
                 return {
+                    "lifecycle": lifecycle.summary(),
                     "status":
                         run_status,
 

@@ -67,10 +67,13 @@ class LeverAdapter:
         url = f"{API_HOSTS[instance]}/v0/postings/{normalize_site(site)}"
         jobs = []
         seen_pages = set()
+        seen_ids = set()
         with httpx.Client(timeout=60.0, headers={
             "Accept": "application/json", "User-Agent": "CareerOS/0.1",
         }) as client:
             while True:
+                if len(seen_pages) >= 1000:
+                    raise RuntimeError("Lever pagination safety limit reached")
                 response = client.get(url, params={
                     "mode": "json", "limit": self.PAGE_SIZE, "skip": len(jobs),
                 })
@@ -83,8 +86,11 @@ class LeverAdapter:
                 if not isinstance(data, list) or any(not isinstance(job, dict) for job in data):
                     raise RuntimeError("Unexpected Lever postings response")
                 fingerprint = tuple(str(job.get("id")) for job in data)
-                if data and fingerprint in seen_pages:
+                page_ids = set(fingerprint)
+                if data and (fingerprint in seen_pages or seen_ids & page_ids
+                             or len(page_ids) != len(data)):
                     raise RuntimeError("Lever pagination did not advance")
+                seen_ids.update(page_ids)
                 seen_pages.add(fingerprint)
                 jobs.extend(data)
                 if len(data) < self.PAGE_SIZE:

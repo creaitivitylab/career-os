@@ -50,9 +50,9 @@ class AshbyAdapter:
                 "Unexpected Ashby response"
             )
 
-        jobs = data.get("jobs") or []
+        jobs = data.get("jobs")
 
-        if not isinstance(jobs, list):
+        if not isinstance(jobs, list) or any(not isinstance(job, dict) for job in jobs):
             raise RuntimeError(
                 "Unexpected Ashby jobs response"
             )

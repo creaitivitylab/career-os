@@ -15,6 +15,7 @@ from app.adapters.lever import (
     normalize_site, parse_lever_url, source_job_id,
 )
 from app.canonical import update_canonical_job
+from app.lifecycle import LifecycleRun, InventoryCompletion
 from app.ingestion import get_or_create_company
 from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
 
@@ -226,11 +227,14 @@ def ingest_lever_jobs(site: str | None = None, instance: str | None = None,
             site_errors = []
             site_results = []
             try:
+                lifecycle = LifecycleRun(cur, SOURCE_NAME, run_id)
                 for tenant in sites:
+                    inventory = lifecycle.scope(tenant.instance, tenant.site)
                     try:
                         jobs = adapter.list_postings(tenant.site, instance=tenant.instance)
                     except Exception as exc:
                         site_errors.append({"instance": tenant.instance, "site": tenant.site, "error": str(exc)})
+                        inventory.finish(InventoryCompletion(False, False, "listing request failed"))
                         continue
                     fetched += len(jobs)
                     selected = [job for job in jobs if is_czech_job(job)]
@@ -298,6 +302,13 @@ def ingest_lever_jobs(site: str | None = None, instance: str | None = None,
                                 created += 1
                             else:
                                 attached += 1
+                    valid_ids = [normalize_posting_id(j.get("id")) for j in jobs]
+                    for pid in valid_ids:
+                        if pid is not None:
+                            inventory.observe(source_job_id(tenant.instance, tenant.site, pid))
+                    complete = failed == before[3] and all(pid is not None for pid in valid_ids)
+                    inventory.finish(InventoryCompletion(True, complete,
+                        "complete native site inventory" if complete else "partial native records"))
                     delta = [value - previous for value, previous in zip((created, attached, updated, failed), before)]
                     if not selected or sum(delta[:3]) > 0:
                         successful_sites += 1
@@ -308,7 +319,7 @@ def ingest_lever_jobs(site: str | None = None, instance: str | None = None,
                         "fetched": len(jobs), "czech_jobs": len(selected),
                         **dict(zip(("created", "attached", "updated", "failed"), delta))})
                 status = direct_run_status(len(sites), successful_sites)
-                metadata = {"site": site, "instance": instance, "site_count": len(sites),
+                metadata = {"lifecycle": lifecycle.summary(), "site": site, "instance": instance, "site_count": len(sites),
                     "czech_jobs": czech_jobs, "attached": attached, "successful_sites": successful_sites,
                     "site_errors": site_errors, "site_results": site_results}
                 cur.execute("""update public.ingestion_runs set finished_at = now(), status = %s,
@@ -317,7 +328,7 @@ def ingest_lever_jobs(site: str | None = None, instance: str | None = None,
                     (status, ALL_TENANTS_FAILED if status == "failed" else None, fetched, created,
                      updated + attached, failed, Jsonb(metadata), run_id))
                 conn.commit()
-                return {"status": status, "run_id": str(run_id), "sites": len(sites),
+                return {"lifecycle": lifecycle.summary(), "status": status, "run_id": str(run_id), "sites": len(sites),
                     "fetched": fetched, "czech_jobs": czech_jobs, "created": created,
                     "attached": attached, "updated": updated, "failed": failed,
                     "successful_sites": successful_sites, "site_errors": site_errors, "site_results": site_results}

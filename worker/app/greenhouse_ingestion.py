@@ -11,6 +11,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from app.canonical import update_canonical_job
+from app.lifecycle import LifecycleRun, InventoryCompletion
 from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
 
 from app.adapters.greenhouse import GreenhouseAdapter
@@ -290,7 +291,11 @@ def ingest_greenhouse_jobs(
 
             try:
 
+                lifecycle = LifecycleRun(cur, SOURCE_NAME, run_id)
+
                 for board in boards:
+                    inventory = lifecycle.scope(board)
+                    failed_before = failed
 
                     try:
                         jobs = adapter.list_jobs(
@@ -302,6 +307,7 @@ def ingest_greenhouse_jobs(
                             "board": board,
                             "error": str(exc),
                         })
+                        inventory.finish(InventoryCompletion(False, False, "listing request failed"))
                         continue
 
                     details_before = details_loaded
@@ -621,6 +627,14 @@ def ingest_greenhouse_jobs(
                             elif attached_job:
                                 attached += 1
 
+                    observed_ids = [(f"{board}:{p['id']}" if p.get("id") is not None else None) for p in jobs]
+                    for native_identity in observed_ids:
+                        if native_identity is not None:
+                            inventory.observe(native_identity)
+                    complete = failed == failed_before and all(i is not None for i in observed_ids)
+                    inventory.finish(InventoryCompletion(True, complete,
+                        "complete native inventory" if complete else "partial records or unsupported inventory filter"))
+
                     if not czech_jobs or details_loaded > details_before:
                         successful_tenants += 1
                     else:
@@ -662,6 +676,7 @@ def ingest_greenhouse_jobs(
                             "details_loaded":
                                 details_loaded,
                             "successful_tenants": successful_tenants,
+                            "lifecycle": lifecycle.summary(),
                             "attached":
                                 attached,
                             "failed":
@@ -676,6 +691,7 @@ def ingest_greenhouse_jobs(
                 conn.commit()
 
                 return {
+                    "lifecycle": lifecycle.summary(),
                     "status": run_status,
                     "run_id": str(run_id),
                     "boards": len(boards),

@@ -9,6 +9,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from app.canonical import update_canonical_job
+from app.lifecycle import refresh_job_activity
 
 from app.adapters.fantastic_jobs import FantasticJobsApifyAdapter
 from app.ingestion import get_or_create_company
@@ -165,6 +166,7 @@ def ingest_fantastic_jobs(
 
                 now = datetime.now(timezone.utc)
 
+                touched_jobs = set()
                 for raw_job in jobs:
 
                     source_job_id = str(
@@ -384,6 +386,10 @@ def ingest_fantastic_jobs(
                         )
 
                         created += 1
+
+                    touched_jobs.add(job_id)
+
+                refresh_job_activity(cur, touched_jobs)
 
                 cur.execute(
                     """

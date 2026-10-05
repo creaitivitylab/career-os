@@ -14,6 +14,7 @@ from app.adapters.workday import (
     czech_location, fold_text, normalize_external_path, parse_workday_url, source_job_id,
 )
 from app.canonical import update_canonical_job
+from app.lifecycle import LifecycleRun, InventoryCompletion
 from app.ingestion import get_or_create_company
 from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
 
@@ -228,7 +229,9 @@ def ingest_workday_jobs(host=None, tenant=None, site=None, max_sites=None, local
             successful_sites = 0
             site_errors, site_results = [], []
             try:
+                lifecycle = LifecycleRun(cur, SOURCE_NAME, run_id)
                 for board in sites:
+                    inventory = lifecycle.scope(board.host, board.tenant, board.site)
                     counters = dict.fromkeys(COUNTERS, 0)
                     errors, usable_details, unavailable, native_ids = [], 0, 0, set()
                     result = {"host": board.host, "tenant": board.tenant, "site": board.site}
@@ -258,6 +261,7 @@ def ingest_workday_jobs(host=None, tenant=None, site=None, max_sites=None, local
                                 try:
                                     detail = adapter.get_detail(board, path)
                                     identity = source_job_id(board, detail["jobPostingInfo"].get("id"))
+                                    inventory.observe(identity)
                                     if identity in native_ids:
                                         counters["duplicate_native_ids"] += 1
                                         continue
@@ -282,12 +286,20 @@ def ingest_workday_jobs(host=None, tenant=None, site=None, max_sites=None, local
                                 successful_sites += 1
                             else:
                                 site_errors.append({**result, "error": "No listing candidate produced usable detail data"})
+                    complete = (result.get("status") == "success" and not counters["failed"]
+                                and result.get("discovery_mode") == "fallback"
+                                and not counters["fallback_skipped_foreign"]
+                                and not counters["listing_missing_path"])
+                    result["lifecycle"] = inventory.finish(InventoryCompletion(
+                        result.get("status") == "success", complete,
+                        "complete unfiltered native inventory" if complete else
+                        "filtered geography, failed detail, or uncertain inventory"))
                     result.update(counters, detail_errors=errors)
                     site_results.append(result)
                     for key in COUNTERS:
                         totals[key] += counters[key]
                 status = direct_run_status(len(sites), successful_sites)
-                metadata = {**request, "sites_discovered": len(discovered), "sites": len(sites),
+                metadata = {"lifecycle": lifecycle.summary(), **request, "sites_discovered": len(discovered), "sites": len(sites),
                     "fantastic_inventory_rows": len(rows),
                     "successful_sites": successful_sites, **totals, "site_errors": site_errors, "site_results": site_results}
                 cur.execute("""update public.ingestion_runs set finished_at = now(), status = %s,

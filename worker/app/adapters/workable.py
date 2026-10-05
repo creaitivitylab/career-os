@@ -48,12 +48,7 @@ class WorkableAdapter:
 
         jobs = data.get("jobs")
 
-        if jobs is None:
-            data["jobs"] = []
-
-        elif not isinstance(jobs, list):
-            raise RuntimeError(
-                "Unexpected Workable jobs response"
-            )
+        if not isinstance(jobs, list) or any(not isinstance(job, dict) for job in jobs):
+            raise RuntimeError("Unexpected Workable jobs response; inventory completeness unknown")
 
         return data

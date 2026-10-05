@@ -15,6 +15,7 @@ from app.adapters.successfactors import (
     ineligible_reason, parse_rmk_url, public_url, source_job_id,
 )
 from app.canonical import update_canonical_job
+from app.lifecycle import LifecycleRun, InventoryCompletion
 from app.ingestion import get_or_create_company
 from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
 from app.successfactors_scopes import apply_scope_gate, load_scope_gate
@@ -195,7 +196,12 @@ def ingest_successfactors_jobs(host=None, brand=None, locale=None, max_sites=Non
             results, errors, processed = [], [], 0
             seen_native = set()
             try:
+                lifecycle = LifecycleRun(cur, SOURCE_NAME, run_id)
+                # RMK posting identities cross brands: single-scope ownership
+                # cannot be assumed for tenants with multiple reviewed brands.
+                tenant_scopes = Counter(r.native_tenant for r in load_scope_gate().scopes)
                 for site in sites:
+                    inventory = None
                     rule = rules.get((site.host, site.brand))
                     site_locale = (None if rule.locale_union else rule.preferred_locale) if rule else locale
                     started = time.monotonic()
@@ -213,6 +219,7 @@ def ingest_successfactors_jobs(host=None, brand=None, locale=None, max_sites=Non
                                 apply_scope_gate(config, rule)
                                 result["unapproved_locales"] = sorted(set(config.advertised_locales) - set(config.locales))
                             result["config"] = config.metadata()
+                            inventory = lifecycle.scope(site.host, config.tenant, config.brand)
                             candidates, modes = adapter.discover_candidates(config)
                             result["discovery"] = modes
                             # Compact audit of historical identities, not a
@@ -232,6 +239,7 @@ def ingest_successfactors_jobs(host=None, brand=None, locale=None, max_sites=Non
                                 try:
                                     detail = adapter.get_detail(config, listing)
                                     identity = source_job_id(config.tenant, detail["posting_id"])
+                                    inventory.observe(identity)
                                     if identity in seen_native:
                                         counts["duplicate_native_ids"] += 1
                                         usable += 1
@@ -277,6 +285,16 @@ def ingest_successfactors_jobs(host=None, brand=None, locale=None, max_sites=Non
                             if status == "failed":
                                 counts["failed"] += 1
                             errors.append({"host": site.host, "brand": site.brand, "status": status, "kind": exc.kind, "error": str(exc)})
+                        if inventory is not None:
+                            complete = (result.get("status") == "success" and rule is not None
+                                        and not counts["failed"] and not adapter.counters["fallback_skipped_foreign"]
+                                        and all(m["mode"] == "fallback" for m in modes)
+                                        and set(config.advertised_locales).issubset(config.locales)
+                                        and tenant_scopes[config.tenant] == 1)
+                            result["lifecycle"] = inventory.finish(InventoryCompletion(
+                                result.get("status") == "success", complete,
+                                "complete reviewed native inventory" if complete else
+                                "filtered/partial/unreviewed inventory or shared brand/locale ownership"))
                         result.update(adapter.counters, **counts, duration_seconds=round(time.monotonic() - started, 3))
                     results.append(result)
                     logger.info("RMK scope completed run=%s host=%s brand=%s status=%s seconds=%s candidates=%s details=%s czech=%s failed=%s",
@@ -285,7 +303,7 @@ def ingest_successfactors_jobs(host=None, brand=None, locale=None, max_sites=Non
                     for key in totals:
                         totals[key] += result[key]
                 status = direct_run_status(len(sites), processed)
-                metadata = {**request, "fantastic_rows_classified": len(rows), "classification_counts": classifications,
+                metadata = {"lifecycle": lifecycle.summary(), **request, "fantastic_rows_classified": len(rows), "classification_counts": classifications,
                     "sites_discovered": len(discovered), "sites": len(sites), "successful_sites": processed,
                     "unresolved_sites": sum(r["status"] == "unresolved" for r in results),
                     "non_rmk_sites": sum(r["status"] == "unsupported" for r in results),

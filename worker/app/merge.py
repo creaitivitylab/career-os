@@ -6,6 +6,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from app.source_priority import SOURCE_PRIORITY, source_priority
+from app.lifecycle import refresh_job_activity
 
 
 def merge_duplicate_candidate(
@@ -329,14 +330,6 @@ def merge_duplicate_candidate(
                             r.last_verified_at
                         ),
 
-                    status =
-                        case
-                            when k.status = 'active'
-                                 or r.status = 'active'
-                            then 'active'
-                            else k.status
-                        end,
-
                     updated_at = now()
 
                 from public.jobs r
@@ -375,6 +368,7 @@ def merge_duplicate_candidate(
                 (removed_id,),
             )
 
+            refresh_job_activity(cur, [keeper_id])
             conn.commit()
 
             preview["merged"] = True

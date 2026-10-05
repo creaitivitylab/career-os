@@ -9,6 +9,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from app.canonical import update_canonical_job
+from app.lifecycle import LifecycleRun, InventoryCompletion
 from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
 
 from app.adapters.ashby import AshbyAdapter
@@ -528,10 +529,14 @@ def ingest_ashby_jobs(
 
             try:
 
+                lifecycle = LifecycleRun(cur, SOURCE_NAME, run_id)
+
                 for (
                     company_name,
                     board,
                 ) in boards:
+                    inventory = lifecycle.scope(board)
+                    failed_before = failed
 
                     try:
                         jobs = (
@@ -551,6 +556,7 @@ def ingest_ashby_jobs(
                                 str(exc),
                         })
 
+                        inventory.finish(InventoryCompletion(False, False, "listing request failed"))
                         continue
 
                     processed_before = created + attached + updated
@@ -884,6 +890,14 @@ def ingest_ashby_jobs(
                             elif attached_job:
                                 attached += 1
 
+                    observed_ids = [(f"{board}:{extract_uuid(p.get('jobUrl'))}" if extract_uuid(p.get("jobUrl")) else None) for p in listed_jobs]
+                    for native_identity in observed_ids:
+                        if native_identity is not None:
+                            inventory.observe(native_identity)
+                    complete = failed == failed_before and all(i is not None for i in observed_ids)
+                    inventory.finish(InventoryCompletion(True, complete,
+                        "complete native inventory" if complete else "partial records or unsupported inventory filter"))
+
                     if not selected or created + attached + updated > processed_before:
                         successful_tenants += 1
                     else:
@@ -925,6 +939,7 @@ def ingest_ashby_jobs(
                             "czech_jobs":
                                 czech_jobs,
                             "successful_tenants": successful_tenants,
+                            "lifecycle": lifecycle.summary(),
                             "attached":
                                 attached,
                             "missing_uuid":
@@ -941,6 +956,7 @@ def ingest_ashby_jobs(
                 conn.commit()
 
                 return {
+                    "lifecycle": lifecycle.summary(),
                     "status":
                         run_status,
 

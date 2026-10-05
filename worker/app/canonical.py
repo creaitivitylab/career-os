@@ -94,7 +94,6 @@ def update_canonical_job(
     updates.update({
         "last_seen_at": now,
         "last_verified_at": now,
-        "status": "active",
         "updated_at": now,
     })
     assignments = sql.SQL(", ").join(
