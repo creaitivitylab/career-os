@@ -7,6 +7,10 @@ BASE_URL="http://127.0.0.1:8000"
 run_source() {
     NAME="$1"
     ENDPOINT="$2"
+    PAYLOAD="${3:-}"
+    if [ -z "$PAYLOAD" ]; then
+        PAYLOAD='{}'
+    fi
 
     echo
     echo "=================================================="
@@ -19,7 +23,7 @@ run_source() {
             -X POST \
             "$BASE_URL$ENDPOINT" \
             -H "Content-Type: application/json" \
-            -d '{}' \
+            -d "$PAYLOAD" \
             2>&1
     )"
 
@@ -73,6 +77,13 @@ run_source \
 run_source \
     "Workday" \
     "/ingest/ats/workday" \
+    || FAILED=$((FAILED + 1))
+
+
+run_source \
+    "SuccessFactors RMK (validated scopes)" \
+    "/ingest/ats/successfactors" \
+    '{"validated_scopes":true}' \
     || FAILED=$((FAILED + 1))
 
 

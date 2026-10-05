@@ -1,0 +1,485 @@
+{
+  "version": 1,
+  "scopes": [
+    {
+      "host": "apply-now.serco.com",
+      "brand": "",
+      "native_tenant": "SercoGroup",
+      "native_search_brand": "",
+      "preferred_locale": "en_GB"
+    },
+    {
+      "host": "apply.mottmac.com",
+      "brand": "",
+      "native_tenant": "MMPROD",
+      "native_search_brand": "",
+      "preferred_locale": "en_GB"
+    },
+    {
+      "host": "assaabloy.jobs2web.com",
+      "brand": "",
+      "native_tenant": "assaabloya",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "career.benteler.jobs",
+      "brand": "",
+      "native_tenant": "BENTELER",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "careers-sf.zf-lifetec.com",
+      "brand": "",
+      "native_tenant": "zffriedricP2",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "careers.amrest.eu",
+      "brand": "Amrest",
+      "native_tenant": "amrestsp01",
+      "native_search_brand": "Amrest",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "careers.amrest.eu",
+      "brand": "BurgerKing",
+      "native_tenant": "amrestsp01",
+      "native_search_brand": "BurgerKing",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "careers.amrest.eu",
+      "brand": "KFC",
+      "native_tenant": "amrestsp01",
+      "native_search_brand": "KFC",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "careers.amrest.eu",
+      "brand": "PizzaHut",
+      "native_tenant": "amrestsp01",
+      "native_search_brand": "PizzaHut",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "careers.amrest.eu",
+      "brand": "starbucks",
+      "native_tenant": "amrestsp01",
+      "native_search_brand": "starbucks",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "careers.bureauveritas.com",
+      "brand": "",
+      "native_tenant": "BVPROD",
+      "native_search_brand": "",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "careers.capgemini.com",
+      "brand": "",
+      "native_tenant": "capgemitecP3",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "careers.coty.com",
+      "brand": "",
+      "native_tenant": "Coty",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "careers.cybex-online.com",
+      "brand": "",
+      "native_tenant": "C0015267129P",
+      "native_search_brand": "",
+      "preferred_locale": "de_DE"
+    },
+    {
+      "host": "careers.dachser.com",
+      "brand": "dachser_europe",
+      "native_tenant": "dachserse",
+      "native_search_brand": "dachser_europe",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "careers.datwyler.com",
+      "brand": "",
+      "native_tenant": "dtwylerits",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "careers.eon.com",
+      "brand": "ceskarepublika",
+      "native_tenant": "EonProd",
+      "native_search_brand": "ceskarepublika",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "careers.essilorluxottica.com",
+      "brand": "",
+      "native_tenant": "LUXGRP",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "careers.ey.com",
+      "brand": "ey",
+      "native_tenant": "EYHRISPRD1",
+      "native_search_brand": "ey",
+      "preferred_locale": "en_GB"
+    },
+    {
+      "host": "careers.eykon-solutions.com",
+      "brand": "",
+      "native_tenant": "MeterTechPROD",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "careers.gates.com",
+      "brand": "",
+      "native_tenant": "1131442P",
+      "native_search_brand": "",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "careers.lasselsberger.com",
+      "brand": "lbminerals-cze",
+      "native_tenant": "lasselsber",
+      "native_search_brand": "",
+      "preferred_locale": "en_US",
+      "locale_union": [
+        "cs_CZ",
+        "de_DE",
+        "en_US",
+        "hu_HU",
+        "ro_RO",
+        "ru_RU",
+        "sk_SK"
+      ]
+    },
+    {
+      "host": "careers.midisgroup.com",
+      "brand": "",
+      "native_tenant": "MIDIS",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "careers.mondigroup.com",
+      "brand": "",
+      "native_tenant": "mondiag",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "careers.nemak.com",
+      "brand": "",
+      "native_tenant": "Nemak",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "careers.nordanglia.com",
+      "brand": "",
+      "native_tenant": "C0019617072P",
+      "native_search_brand": "",
+      "preferred_locale": "en_GB"
+    },
+    {
+      "host": "careers.ontex.com",
+      "brand": "",
+      "native_tenant": "C0002505869P",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "careers.recordati.com",
+      "brand": "",
+      "native_tenant": "recordatii",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "careersasahiinternational.jobs.hr.cloud.sap",
+      "brand": "AEI",
+      "native_tenant": "asahiceeur",
+      "native_search_brand": "AEI",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "careersasahiinternational.jobs.hr.cloud.sap",
+      "brand": "PrazdrojCZ",
+      "native_tenant": "asahiceeur",
+      "native_search_brand": "PrazdrojCZ",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "elchxmprod.jobs.hr.cloud.sap",
+      "brand": "",
+      "native_tenant": "elcHXMProd",
+      "native_search_brand": "",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "job.brose.com",
+      "brand": "",
+      "native_tenant": "brosefahrz",
+      "native_search_brand": "",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "jobdetails.nestle.com",
+      "brand": "",
+      "native_tenant": "nestleHRprdBX",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "jobs-sf.amcor.com",
+      "brand": "",
+      "native_tenant": "Amcor",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "jobs.aptar.com",
+      "brand": "",
+      "native_tenant": "aptaritali",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "jobs.atos.net",
+      "brand": "",
+      "native_tenant": "Atos",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "jobs.ball.com",
+      "brand": "corp_packaging",
+      "native_tenant": "ballcorpor",
+      "native_search_brand": "corp_packaging",
+      "preferred_locale": "en_GB"
+    },
+    {
+      "host": "jobs.bilfinger.com",
+      "brand": "",
+      "native_tenant": "bilfingers",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "jobs.boehringer-ingelheim.com",
+      "brand": "",
+      "native_tenant": "BoehringerPRD",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "jobs.canda.com",
+      "brand": "",
+      "native_tenant": "CAProduction",
+      "native_search_brand": "",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "jobs.doosan.com",
+      "brand": "bobcat",
+      "native_tenant": "doosancorp",
+      "native_search_brand": "bobcat",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "jobs.dsv.com",
+      "brand": "",
+      "native_tenant": "dsvas",
+      "native_search_brand": "",
+      "preferred_locale": "en_GB"
+    },
+    {
+      "host": "jobs.enersys.com",
+      "brand": "",
+      "native_tenant": "EnerSysDP2",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "jobs.feg.eu",
+      "brand": "",
+      "native_tenant": "fortunagam",
+      "native_search_brand": "",
+      "preferred_locale": "en_GB"
+    },
+    {
+      "host": "jobs.foundever.com",
+      "brand": "",
+      "native_tenant": "SitelPROD",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "jobs.innomotics.com",
+      "brand": "",
+      "native_tenant": "InnoProd",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "jobs.kaufland.com",
+      "brand": "",
+      "native_tenant": "KAUFLAND",
+      "native_search_brand": "",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "jobs.kaufland.com",
+      "brand": "Cesko",
+      "native_tenant": "KAUFLAND",
+      "native_search_brand": "Cesko",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "jobs.lear.com",
+      "brand": "",
+      "native_tenant": "learcorporP2",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "jobs.molsoncoors.com",
+      "brand": "Staropramen",
+      "native_tenant": "C0000161074P",
+      "native_search_brand": "Staropramen",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "jobs.pfeifergroup.com",
+      "brand": "",
+      "native_tenant": "pfeiferhol",
+      "native_search_brand": "",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "jobs.scania.com",
+      "brand": "",
+      "native_tenant": "volkswagenP20",
+      "native_search_brand": "",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "jobs.schaeffler.com",
+      "brand": "",
+      "native_tenant": "schaeffler",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "jobs.tenneco.com",
+      "brand": "",
+      "native_tenant": "TennecoP1",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "jobs.volkswagen-group.com",
+      "brand": "Porsche-Holding-CZ",
+      "native_tenant": "VWAGLPPROD10",
+      "native_search_brand": "Porsche-Holding-CZ",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "jobs.volvogroup.com",
+      "brand": "",
+      "native_tenant": "volvoinfor",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "jobs.yunextraffic.com",
+      "brand": "",
+      "native_tenant": "YunexPROD",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "jobs.zf.com",
+      "brand": "",
+      "native_tenant": "zffriedric",
+      "native_search_brand": "",
+      "preferred_locale": "en_US"
+    },
+    {
+      "host": "kariera.spravazeleznic.cz",
+      "brand": "",
+      "native_tenant": "spravazel",
+      "native_search_brand": "",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "mann-hummel-careers.com",
+      "brand": "",
+      "native_tenant": "mannhummel",
+      "native_search_brand": "",
+      "preferred_locale": "cs_CZ"
+    },
+    {
+      "host": "opportunities.vodafone.com",
+      "brand": "",
+      "native_tenant": "vodafoneprP",
+      "native_search_brand": "",
+      "preferred_locale": "en_GB"
+    },
+    {
+      "host": "prace.foxconn.cz",
+      "brand": "",
+      "native_tenant": "foxconnczs",
+      "native_search_brand": "",
+      "preferred_locale": "cs_CZ"
+    }
+  ],
+  "excluded_scopes": [
+    {
+      "host": "apply.action.com",
+      "brand": "",
+      "reason": "RMK has no advertised public GET search form"
+    },
+    {
+      "host": "career.deutsche-boerse.com",
+      "brand": "",
+      "reason": "RMK has no advertised public GET search form"
+    },
+    {
+      "host": "careers.allegro.eu",
+      "brand": "",
+      "reason": "RMK has no advertised public GET search form"
+    },
+    {
+      "host": "careers.irco.com",
+      "brand": "",
+      "reason": "RMK has no advertised public GET search form"
+    },
+    {
+      "host": "careers.landisgyr.eu",
+      "brand": "",
+      "reason": "Expired public TLS certificate; advertised alias cannot be revalidated without weakening transport verification"
+    },
+    {
+      "host": "careers.success-solutions.cz",
+      "brand": "",
+      "reason": "Public listing returns six native paths without a total or page size; safe pagination cannot establish catalog completion"
+    },
+    {
+      "host": "erstegroup-careers.com",
+      "brand": "",
+      "reason": "Unresolved Czech current-job discovery; public search does not recover known Czech population"
+    }
+  ]
+}

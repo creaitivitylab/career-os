@@ -31,6 +31,7 @@ from app.ashby_ingestion import (
 
 from app.lever_ingestion import ingest_lever_jobs
 from app.workday_ingestion import ingest_workday_jobs
+from app.successfactors_ingestion import ingest_successfactors_jobs
 
 from app.dedupe import (
     rebuild_duplicate_candidates,
@@ -115,6 +116,16 @@ class LeverIngestionRequest(BaseModel):
     site: str | None = Field(default=None, min_length=1, max_length=200,
                              pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
     instance: Literal["global", "eu"] | None = None
+    max_sites: int | None = Field(default=None, ge=1, le=500)
+
+
+class SuccessFactorsIngestionRequest(BaseModel):
+    validated_scopes: bool = False
+    host: str | None = Field(default=None, min_length=1, max_length=253,
+                             pattern=r"^[A-Za-z0-9.-]+$")
+    brand: str | None = Field(default=None, max_length=200,
+                              pattern=r"^[A-Za-z0-9_/-]*$")
+    locale: str | None = Field(default=None, pattern=r"^[a-z]{2}_[A-Z]{2}$")
     max_sites: int | None = Field(default=None, ge=1, le=500)
 
 
@@ -253,6 +264,17 @@ def ingest_workday(request: WorkdayIngestionRequest):
     try:
         result = ingest_workday_jobs(host=request.host, tenant=request.tenant, site=request.site,
                                      max_sites=request.max_sites, locale=request.locale)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return direct_ingestion_response(result)
+
+
+@app.post("/ingest/ats/successfactors")
+def ingest_successfactors(request: SuccessFactorsIngestionRequest):
+    try:
+        result = ingest_successfactors_jobs(host=request.host, brand=request.brand,
+                                          locale=request.locale, max_sites=request.max_sites,
+                                          validated_scopes=request.validated_scopes)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return direct_ingestion_response(result)

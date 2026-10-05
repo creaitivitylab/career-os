@@ -42,8 +42,9 @@ Current important sources:
 - `ashby_direct`
 - `lever_direct`
 - `workday_direct`
+- `successfactors_direct`
 
-Existing SmartRecruiters, Greenhouse, Workable, Ashby, Lever and Workday adapters should be used as implementation patterns.
+Existing SmartRecruiters, Greenhouse, Workable, Ashby, Lever, Workday and SuccessFactors RMK adapters should be used as implementation patterns.
 
 Relevant files include:
 
@@ -57,6 +58,10 @@ Relevant files include:
 - `worker/app/lever_ingestion.py`
 - `worker/app/adapters/workday.py`
 - `worker/app/workday_ingestion.py`
+- `worker/app/adapters/successfactors.py`
+- `worker/app/successfactors_ingestion.py`
+- `worker/app/successfactors_scopes.py`
+- `worker/app/config/successfactors_scopes.json`
 - `worker/app/dedupe.py`
 - `worker/app/merge.py`
 - `worker/app/main.py`
@@ -108,6 +113,19 @@ Final eligibility still requires primary country CZ or a clearly Czech additiona
 Without a usable Czech geography facet, traverse listings conservatively and prune only explicit foreign single locations.
 Use 20-record pages and actual returned lengths; ignore misleading subsequent totals and retain stalled-page/page-limit protection.
 Accept an out-of-range page reset only after the advertised boundary is independently confirmed by the exact short tail; count pathless listing stubs without inventing URLs.
+
+SuccessFactors ingestion supports Recruiting Marketing (RMK) only. Migrated SAP/SmartRecruiters and Dream.jobs records are excluded.
+Discover native tenant/brand configuration from Fantastic-derived public sites; source identity is `{sso_company_id}:{rmk_posting_id}`. Internal requisition/locale IDs are separate and must never substitute for the posting ID.
+Exact native identity must match exactly one Fantastic canonical job before attachment. Multiple canonical matches remain ambiguous even when a slug matches; create a separate canonical job and never auto-merge.
+
+Unattended SuccessFactors execution must use `{"validated_scopes":true}` and the repository-owned validated scope gate. New scopes require deliberate validation/review; never enable unrestricted automatic discovery in the runner.
+Keep native tenant, brand and public host checks. Preserve the preferred locale as the primary view; for non-English primary views, union at most one English locale publicly advertised by the same scope's posting layout or verified brand homepage. Do not enumerate all languages. Existing reviewed locale unions remain limited to their approved members.
+Union all recognized Czech country/city/location facet values and deduplicate native posting identities across facets/locales before details. Kutná Hora is a recognized bare Czech geography value. English language, generic Remote/Europe/EMEA and URL slugs are not Czech eligibility: verify native detail country/address/primary/additional location evidence.
+Without usable geography facets, retain conservative listing fallback. An automatically added alternate locale's unfiltered catalog must have a native count of at most 100; larger or uncounted catalogs require review and must report unresolved discovery rather than silently truncate.
+
+Preserve both table and tile handlers, board page sizes, locale/filter state, repeated-page detection and maximum-page protection.
+Foundever listing discovery was recovered and verified. A changing advertised count may terminate only when the native terminal range and current count agree with every accumulated unique identity and an independent next-page request confirms an empty boundary with the same count. Report malformed detail records separately; do not manufacture identities.
+Erste remains unresolved and excluded. Keep all other excluded/unsupported scopes visible in gate diagnostics; do not bypass access controls or re-fetch historical URLs as current discovery.
 
 ## Dedupe and merge safety
 
