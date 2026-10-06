@@ -11,7 +11,7 @@ from .models import (CareerContext, Compensation, Content, Employment, Fact, Ide
 from .parsers import (employment_values, experience, languages, salary, sections,
                       technologies, title_facts, workplace_mode)
 from .projectors import project_source
-from .selection import DIRECT, select_description, select_fact
+from .selection import DIRECT, evidence_rank, select_description, select_fact
 from .versions import versions
 
 
@@ -132,16 +132,24 @@ def build_profile(job: dict, *, generated_at: datetime | None = None,
             return Fact(state=unavailable)
         return known_list(values, [i for value in values for i in value.evidence_ids])
     locations = [loc for p in projections for loc in p.locations]
-    location_ids = [i for loc in locations for name in ("text", "country", "city", "region")
+    def location_rank(loc):
+        return max(evidence_rank(name, collector.records[i])
+                   for name in ("country", "city", "region") for i in getattr(loc, name).evidence_ids)
+    # Ordered source-specific places, never a synthetic address combining
+    # incompatible sources. Stronger evidence comes first; alternatives remain.
+    locations.sort(key=location_rank, reverse=True)
+    location_ids = [i for loc in locations for name in ("text", "country", "country_name", "city", "region")
                     for i in getattr(loc, name).evidence_ids]
     # Retain source-specific locations instead of flattening foreign primary and
-    # Czech secondary addresses. Contradictory top-tier primary countries flag a
+    # Czech secondary addresses. Contradictory top-tier primary fields flag a
     # conflict while leaving all location evidence available for review.
-    primary_countries = {loc.country.value for p in projections if p.source.source_name in DIRECT
-                         for loc in p.locations if loc.kind == "primary" and loc.country.value}
     location_fact = known_list(locations, location_ids) if locations else Fact()
-    if len(primary_countries) > 1:
-        location_fact.state = ValueState.CONFLICT
+    for field in ("country", "city", "region"):
+        primary = [getattr(loc, field) for loc in locations if loc.kind == "primary" and getattr(loc, field).value]
+        if select_fact(field, primary, collector).state == ValueState.CONFLICT:
+            location_fact.state = ValueState.CONFLICT
+    raw_labels = [label for p in projections for label in p.raw_location_labels]
+    raw_label_fact = known_list(raw_labels, [i for label in raw_labels for i in label.evidence_ids]) if raw_labels else Fact()
     offers = [known_list(p.offers, [i for offer in p.offers for i in offer.evidence_ids])
               for p in projections if p.offers]
     if parsed["compensation"]:
@@ -169,7 +177,7 @@ def build_profile(job: dict, *, generated_at: datetime | None = None,
         role=Role(original_title=select_fact("title", title_candidates, collector),
             normalized_role=selected_fact("normalized_role"), career_level=selected_fact("career_level"),
             leadership_markers=selected_fact("leadership_markers"), native_level=selected_fact("native_level")),
-        workplace=Workplace(locations=location_fact, mode=selected_fact("workplace")),
+        workplace=Workplace(locations=location_fact, raw_location_labels=raw_label_fact, mode=selected_fact("workplace")),
         employment=Employment(schedule=selected_fact("schedule"), relationship=selected_fact("relationship"), duration=selected_fact("duration")),
         compensation=Compensation(offers=compensation),
         requirements=Requirements(technologies=parsed_fact("technologies"), languages=parsed_fact("languages"),
@@ -193,6 +201,7 @@ def reprocessing_layers(previous: Metadata | None, current: Metadata) -> set[str
     layers = {"selection", "profile"}
     if (previous.semantic_metadata_hash != current.semantic_metadata_hash
             or previous.versions.get("projector") != current.versions.get("projector")
+            or previous.versions.get("geography") != current.versions.get("geography")
             or previous.versions.get("parser") != current.versions.get("parser")):
         layers.add("native")
     if (previous.cleaned_description_hash != current.cleaned_description_hash

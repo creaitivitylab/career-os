@@ -2,6 +2,7 @@
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
+import re
 from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -62,6 +63,7 @@ class Evidence(Model):
     id: str
     field: str
     value: Any  # Assertions accompany strongly typed domain fields below.
+    raw_value: Any = None  # Original geography wording; never a whole source payload.
     source_name: str
     source_job_id: str
     extraction_method: Method
@@ -96,6 +98,22 @@ class Location(Model):
     city: Fact[str] = Field(default_factory=Fact[str])
     region: Fact[str] = Field(default_factory=Fact[str])
     country: Fact[str] = Field(default_factory=Fact[str])
+    country_name: Fact[str] = Field(default_factory=Fact[str])
+
+    @model_validator(mode="after")
+    def iso_country(self):
+        if self.country.value and not re.fullmatch(r"[A-Z]{2}", self.country.value):
+            raise ValueError("Normalized country must be ISO alpha-2")
+        return self
+
+
+class RawLocationLabel(Model):
+    """Useful source input that has not established a structured place."""
+    raw_value: str
+    field_semantics: Literal["label", "country", "city", "region"]
+    kind: Literal["primary", "additional", "unspecified"]
+    reason: str
+    evidence_ids: list[str] = Field(min_length=1)
 
 
 class CompensationOffer(Model):
@@ -205,6 +223,7 @@ class Role(Model):
 
 class Workplace(Model):
     locations: Fact[list[Location]] = Field(default_factory=Fact)
+    raw_location_labels: Fact[list[RawLocationLabel]] = Field(default_factory=Fact)
     mode: Fact[Literal["onsite", "hybrid", "remote", "unknown"]] = Field(default_factory=Fact)
 
 

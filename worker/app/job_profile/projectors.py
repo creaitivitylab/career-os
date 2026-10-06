@@ -4,9 +4,10 @@ from decimal import Decimal
 import re
 
 from .evidence import EvidenceCollector
-from .models import CompensationOffer, Fact, Location, Method, SourceInput
-from .parsers import (amount, country_code, employment_values, fold, native_level,
-                      parse_location_label, pay_period, workplace_mode, PAY_NUMBER)
+from .models import CompensationOffer, Fact, Location, Method, RawLocationLabel, SourceInput
+from .geography import COUNTRIES, city, country_code, label_components, non_geographic_reason, parse_label, region
+from .parsers import (amount, employment_values, fold, native_level,
+                      pay_period, workplace_mode, PAY_NUMBER)
 from .selection import DescriptionCandidate
 
 
@@ -40,6 +41,7 @@ class Projection:
     source: SourceInput
     facts: dict[str, list[Fact]] = field(default_factory=dict)
     locations: list[Location] = field(default_factory=list)
+    raw_location_labels: list[RawLocationLabel] = field(default_factory=list)
     offers: list[CompensationOffer] = field(default_factory=list)
     description: DescriptionCandidate | None = None
 
@@ -86,22 +88,95 @@ class Projector:
             self.fact("career_level", native_level(value), path)
 
     def location(self, label_path=None, country_path=None, city_path=None, region_path=None, kind="primary"):
+        """Typed address fields are trusted; mixed labels require recognition.
+
+        A navigation/domain label identifies a non-place record, even when its
+        enclosing native object contains an anomalous address (e.g. job-board
+        categories exported as Ashby secondary locations). Retain every value
+        as rejected raw evidence instead of publishing that object as a place.
+        """
         values = {}
-        for name, path in [("text", label_path), ("country", country_path), ("city", city_path), ("region", region_path)]:
-            value = text(self.value(path)) if path else None
+        label = text(self.value(label_path)) if label_path else None
+        # Delimited multi-place labels are a layout, not long prose. Parse each
+        # independently only when every segment establishes some geography;
+        # never flatten several countries onto one city.
+        segments = [part.strip() for part in label.split(";") if part.strip()] if label else []
+        if (len(segments) > 1 and not any((country_path, city_path, region_path))
+                and all(parse_label(part) for part in segments)):
+            for part in segments:
+                parsed = parse_label(part)
+                item = {}
+                for name, value in parsed.items():
+                    inferred_country = name == "country" and value not in {
+                        country_code(component) for component in label_components(label)}
+                    item[name] = self.evidence.fact(self.source, name, value, path="raw_payload."+label_path,
+                        method=Method.PARSER, input_value=self.value(label_path), raw_value=self.value(label_path),
+                        confidence="medium", explicitness="inferred" if inferred_country else "explicit")
+                    if name == "country":
+                        item["country_name"] = self.evidence.fact(self.source, "country_name", COUNTRIES[value],
+                            path="raw_payload."+label_path, method=Method.PARSER, input_value=self.value(label_path),
+                            raw_value=self.value(label_path), confidence="medium",
+                            explicitness="inferred" if inferred_country else "explicit")
+                item["text"] = self.evidence.fact(self.source, "text", part, path="raw_payload."+label_path,
+                    method=Method.PARSER, input_value=self.value(label_path), raw_value=self.value(label_path), confidence="medium")
+                self.result.locations.append(Location(kind="unspecified", **item))
+            return
+        label_reason = non_geographic_reason(label) if label else None
+        quarantine = label_reason in {"url_or_domain", "navigation_or_marketplace", "prose_or_long_label"}
+
+        def raw(path, semantics, reason):
+            original = text(self.value(path)) if path else None
+            if not original:
+                return
+            rejected = reason != "unrecognized_geography"
+            key = self.evidence.add(self.source, "raw_location_label", original,
+                path="raw_payload."+path, method=self.method, input_value=self.value(path),
+                raw_value=self.value(path), confidence="low", explicitness="unknown",
+                validation="rejected" if rejected else "unvalidated")
+            self.result.raw_location_labels.append(RawLocationLabel(raw_value=original,
+                field_semantics=semantics, kind=kind, reason=reason, evidence_ids=[key]))
+
+        def assertion(name, value, path, parsed=False):
+            normalized_code = country_code(value) if name == "country_name" else value
+            inferred_country = parsed and name in {"country", "country_name"} and normalized_code not in {
+                country_code(part) for part in label_components(text(self.value(path)) or "")}
+            values[name] = self.evidence.fact(self.source, name, value, path="raw_payload."+path,
+                method=Method.PARSER if parsed else self.method, input_value=self.value(path),
+                raw_value=self.value(path), confidence="medium" if parsed else "high",
+                explicitness="inferred" if inferred_country else "explicit")
             if name == "country":
-                value = country_code(value)
-            elif name == "city" and value:
-                value = parse_location_label(value).get("city", value)
-            if value:
-                values[name] = self.evidence.fact(self.source, name, value, path="raw_payload."+path,
-                                                 method=self.method, input_value=self.value(path))
-        if "text" in values:
-            for name, value in parse_location_label(values["text"].value).items():
+                assertion("country_name", COUNTRIES[value], path, parsed)
+
+        if quarantine:
+            for semantics, path in [("label", label_path), ("country", country_path), ("city", city_path), ("region", region_path)]:
+                raw(path, semantics, label_reason if semantics == "label" else "non_geographic_location_record")
+            return
+        code = country_code(text(self.value(country_path))) if country_path else None
+        for name, path, normalized in [
+            ("country", country_path, code),
+            ("city", city_path, city(text(self.value(city_path)), code) if city_path and text(self.value(city_path)) else None),
+            ("region", region_path, region(text(self.value(region_path)), code) if region_path and text(self.value(region_path)) else None),
+        ]:
+            if normalized:
+                assertion(name, normalized, path)
+            elif path and text(self.value(path)):
+                original = text(self.value(path))
+                reason = non_geographic_reason(original)
+                if not reason and name in {"city", "region"} and country_code(original):
+                    reason = "country_in_"+name
+                raw(path, name, reason or "unrecognized_geography")
+        if label:
+            parsed = parse_label(label, code)
+            for name, value in parsed.items():
                 if name not in values:
-                    values[name] = self.evidence.fact(self.source, name, value, path="raw_payload."+label_path,
-                        method=Method.PARSER, input_value=self.value(label_path))
-        if values:
+                    assertion(name, value, label_path, parsed=True)
+            # A raw label needs independent geographic meaning; merely sharing
+            # an object with an address does not make arbitrary text a place.
+            if parsed or (label_path == city_path and "city" in values):
+                assertion("text", label, label_path, parsed=True)
+            else:
+                raw(label_path, "label", label_reason or "unrecognized_geography")
+        if any(name in values for name in ("country", "city", "region")):
             self.result.locations.append(Location(kind=kind, **values))
 
     def description(self, paths):
