@@ -1,5 +1,9 @@
 # Job Profile V1 — Phase 1
 
+Phase 2A persistence/evaluation infrastructure is documented separately in
+`job-profile-v1-phase2a.md`; the historical Phase 1 SQL draft is superseded by
+the reviewed worker migration, which still requires explicit production approval.
+
 This is an offline native/deterministic foundation. It adds no ingestion hooks,
 HTTP endpoint, persistence writer, queue, LLM call or production migration.
 

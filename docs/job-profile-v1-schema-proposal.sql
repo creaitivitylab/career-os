@@ -1,3 +1,4 @@
+-- Historical Phase 1 draft; superseded by worker/migrations/20261006_job_profiles.sql.
 -- REVIEW PROPOSAL ONLY. Not a migration and never executed by Phase 1.
 -- Client generates version_id. Existing jobs.id is UUID.
 -- No public/client grants: RLS/service access policy requires separate review.

@@ -4,9 +4,10 @@ import re
 
 from .cleaning import description_hash
 from .evidence import EvidenceCollector, known_list, semantic_hash
-from .models import (CareerContext, Compensation, Content, Employment, Fact, Identity,
+from .models import (CareerContext, Compensation, Content, Employment, Fact, Identity, Evidence,
                      JobProfile, Metadata, Method, Requirements, Role, SourceInput,
-                     Span, ValueState, Workplace)
+                     Span, ValueState, Workplace, TechnologyMention, LanguageRequirement,
+                     ExperienceConstraint, ContentSection, CompensationOffer)
 from .parsers import (employment_values, experience, languages, salary, sections,
                       technologies, title_facts, workplace_mode)
 from .projectors import project_source
@@ -31,7 +32,8 @@ def text_facts(text, source, collector):
     return facts
 
 
-def build_profile(job: dict, *, generated_at: datetime | None = None) -> JobProfile:
+def prepare_inputs(job: dict) -> dict:
+    """Cheap native projection/cleanup/hash pass; no text extraction rules."""
     collector = EvidenceCollector()
     sources = [SourceInput.model_validate({k: s.get(k) for k in (
         "source_name", "source_job_id", "raw_payload", "source_url", "is_active", "last_seen_at"
@@ -49,6 +51,34 @@ def build_profile(job: dict, *, generated_at: datetime | None = None) -> JobProf
         [e.source_name, e.source_job_id, e.field, e.value, e.native_field_path, e.extraction_method]
         for e in native_records
     ], key=lambda item: semantic_hash(item)))
+    selected, alternatives = select_description([p.description for p in projections if p.description])
+    cleaned = selected[2] if selected else ""
+    source_inputs_hash = semantic_hash(sorted([
+        [s.source_name, s.source_job_id, s.is_active,
+         next((a.cleaned_hash for a in alternatives if a.source_name == s.source_name and a.source_job_id == s.source_job_id), None)]
+        for s in sources
+    ]))
+    description_digest = description_hash(cleaned)
+    version_metadata = versions()
+    hashes = dict(semantic_metadata_hash=semantic_metadata_hash,
+                  cleaned_description_hash=description_digest, source_inputs_hash=source_inputs_hash)
+    hashes['input_hash'] = semantic_hash([semantic_metadata_hash, description_digest, source_inputs_hash, version_metadata])
+    return dict(collector=collector, sources=sources, projections=projections,
+                native_candidates=native_candidates, selected=selected, alternatives=alternatives,
+                cleaned=cleaned, hashes=hashes, versions=version_metadata)
+
+
+def input_fingerprint(job: dict) -> dict:
+    prepared = prepare_inputs(job)
+    return {**prepared['hashes'], 'versions': prepared['versions']}
+
+
+def build_profile(job: dict, *, generated_at: datetime | None = None,
+                  text_cache: dict | None = None, cache_out: dict | None = None) -> JobProfile:
+    prepared = prepare_inputs(job)
+    collector, sources = prepared['collector'], prepared['sources']
+    projections, native_candidates = prepared['projections'], prepared['native_candidates']
+    selected, alternatives, cleaned = prepared['selected'], prepared['alternatives'], prepared['cleaned']
     title_candidates = list(native_candidates.get("title", []))
     for projection in projections:
         for title in projection.facts.get("title", []):
@@ -56,8 +86,6 @@ def build_profile(job: dict, *, generated_at: datetime | None = None) -> JobProf
             derived = title_facts(title.value, projection.source, collector, path=path)
             for field, value in derived.items():
                 native_candidates.setdefault(field, []).extend(value if isinstance(value, list) else [value])
-    selected, alternatives = select_description([p.description for p in projections if p.description])
-    cleaned = selected[2] if selected else ""
     quality = selected[3] if selected else "empty"
     desc_fact = Fact(state=ValueState.INSUFFICIENT)
     parsed = {"technologies": [], "languages": [], "experience": [], "sections": [], "compensation": []}
@@ -65,9 +93,35 @@ def build_profile(job: dict, *, generated_at: datetime | None = None) -> JobProf
         source, path = selected[1].source, selected[1].native_path
         desc_fact = collector.fact(source, "cleaned_description", cleaned, path=path,
             method=Method.NATIVE if source.source_name in DIRECT else Method.PROVIDER, input_value=cleaned)
-        for field, fn in [("technologies", technologies), ("languages", languages), ("experience", experience), ("sections", sections), ("compensation", salary)]:
-            parsed[field] = fn(cleaned, source, collector)
-        for field, facts in text_facts(cleaned, source, collector).items():
+        # Selected source identity is part of this key: never reuse spans from a
+        # different source merely because its description text happens to match.
+        cache_key = semantic_hash([description_hash(cleaned), source.source_name, source.source_job_id,
+            {k: prepared['versions'][k] for k in ('cleaner', 'parser', 'dictionary')}])
+        models = dict(technologies=TechnologyMention, languages=LanguageRequirement,
+                      experience=ExperienceConstraint, sections=ContentSection, compensation=CompensationOffer)
+        if text_cache and text_cache.get('key') == cache_key:
+            for item in text_cache['evidence']:
+                record = Evidence.model_validate(item)
+                record.source_active = source.is_active
+                collector.records[record.id] = record
+            parsed = {field: [models[field].model_validate(item) for item in items]
+                      for field, items in text_cache['parsed'].items()}
+            clauses = {field: [Fact.model_validate(item) for item in items]
+                       for field, items in text_cache['clauses'].items()}
+            layer = {**text_cache, 'evidence': [collector.records[item['id']].model_dump(mode='json')
+                                               for item in text_cache['evidence']]}
+        else:
+            before = set(collector.records)
+            for field, fn in [("technologies", technologies), ("languages", languages), ("experience", experience), ("sections", sections), ("compensation", salary)]:
+                parsed[field] = fn(cleaned, source, collector)
+            clauses = text_facts(cleaned, source, collector)
+            layer = {'key': cache_key,
+                'parsed': {field: [item.model_dump(mode='json') for item in items] for field, items in parsed.items()},
+                'clauses': {field: [item.model_dump(mode='json') for item in items] for field, items in clauses.items()},
+                'evidence': [record.model_dump(mode='json') for key, record in collector.records.items() if key not in before]}
+        if cache_out is not None:
+            cache_out.update(layer)
+        for field, facts in clauses.items():
             native_candidates.setdefault(field, []).extend(facts)
     unavailable = ValueState.NOT_MENTIONED if quality == "complete" else ValueState.INSUFFICIENT
     def selected_fact(field):
@@ -97,14 +151,11 @@ def build_profile(job: dict, *, generated_at: datetime | None = None) -> JobProf
     def section_blocks(kinds):
         blocks = [section for section in parsed["sections"] if section.kind in kinds]
         return known_list([s.content for s in blocks], [i for s in blocks for i in s.evidence_ids]) if blocks else Fact(state=unavailable)
-    source_inputs_hash = semantic_hash(sorted([
-        [s.source_name, s.source_job_id, s.is_active,
-         next((a.cleaned_hash for a in alternatives if a.source_name == s.source_name and a.source_job_id == s.source_job_id), None)]
-        for s in sources
-    ]))
-    description_digest = description_hash(cleaned)
-    version_metadata = versions()
-    digest = semantic_hash([semantic_metadata_hash, description_digest, source_inputs_hash, version_metadata])
+    semantic_metadata_hash = prepared['hashes']['semantic_metadata_hash']
+    source_inputs_hash = prepared['hashes']['source_inputs_hash']
+    description_digest = prepared['hashes']['cleaned_description_hash']
+    version_metadata = prepared['versions']
+    digest = prepared['hashes']['input_hash']
     identities = [Identity(source_name=p.source.source_name, source_job_id=p.source.source_job_id,
         native_id=select_fact("native_id", p.facts.get("native_id", []), collector),
         url=select_fact("url", p.facts.get("url", []), collector)) for p in projections]
