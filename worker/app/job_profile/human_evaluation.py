@@ -13,14 +13,16 @@ from pydantic import Field, model_validator
 from .models import JobProfile, Model, ValueState, Fact
 
 
-LABEL_VERSION = 'job-profile-human-v1.1'
+LABEL_VERSION = 'job-profile-human-v1.2'
 FIELDS = ('normalized_role', 'job_family', 'career_level', 'workplace', 'employment_schedule',
           'relationship', 'compensation', 'technologies', 'languages', 'experience',
           'opportunity_type', 'is_normal_vacancy', 'people_management', 'city', 'country',
-          'duration', 'base_compensation', 'other_compensation_benefits', 'required_technologies')
+          'duration', 'base_compensation', 'other_compensation_benefits', 'required_technologies',
+          'required_skills', 'preferred_skills', 'base_compensation_present')
 COLLECTIONS = {'compensation', 'technologies', 'languages', 'experience', 'city', 'country',
-               'base_compensation', 'other_compensation_benefits', 'required_technologies'}
+               'base_compensation', 'other_compensation_benefits', 'required_technologies', 'required_skills', 'preferred_skills'}
 LEGACY_FIELDS = FIELDS[:10]
+V11_FIELDS = FIELDS[:19]
 
 
 class LabelLanguage(Model):
@@ -28,7 +30,10 @@ class LabelLanguage(Model):
     requirement: Literal['required','preferred','unknown'] = 'unknown'
     cefr: Literal['A1','A2','B1','B2','C1','C2'] | None = None
     cefr_or_higher: bool | None = None
-    cefr_comparator: Literal['at_least','exact','unknown'] | None = None
+    cefr_comparator: Literal['at_least','at_most','range','exact','unknown'] | None = None
+    cefr_max: Literal['A1','A2','B1','B2','C1','C2'] | None = None
+    original_wording: str | None = None
+    cefr_state: Literal['known','unknown','not_mentioned','ambiguous'] = 'unknown'
 
     @model_validator(mode='after')
     def consistent_bound(self):
@@ -36,6 +41,20 @@ class LabelLanguage(Model):
             raise ValueError('A CEFR comparator needs an explicit CEFR level')
         if self.cefr_comparator == 'at_least' and self.cefr_or_higher is False or self.cefr_comparator in {'exact','unknown'} and self.cefr_or_higher is True:
             raise ValueError('Contradictory CEFR comparator/legacy bound')
+        if self.cefr_comparator in {'at_most','range'} and self.cefr is None:
+            raise ValueError('CEFR bounds require a level')
+        if self.cefr_comparator == 'range':
+            levels = ['A1','A2','B1','B2','C1','C2']
+            if not self.cefr_max or levels.index(self.cefr_max) < levels.index(self.cefr):
+                raise ValueError('CEFR range needs an ordered upper bound')
+        elif self.cefr_max is not None:
+            raise ValueError('Upper CEFR belongs only to a range')
+        if self.cefr is not None:
+            if self.cefr_state in {'not_mentioned','ambiguous'}:
+                raise ValueError('Unavailable CEFR cannot contain a level')
+            self.cefr_state = 'known'
+        elif self.cefr_state == 'known':
+            raise ValueError('Known CEFR needs a level')
         return self
 
 
@@ -68,10 +87,18 @@ class LabelCompensation(Model):
         return self
 
 
+class LabelItemDetail(Model):
+    normalized_value: str
+    original_wording: str | None = None
+    requirement: Literal['required','preferred','unknown'] = 'unknown'
+
+
 class HumanLabel(Model):
     state: Literal['unlabeled', 'known', 'not_mentioned', 'unknown', 'conflict', 'ambiguous'] = 'unlabeled'
     value: Any = None
     notes: str | None = None
+    evidence_text: str | None = None
+    item_details: list[LabelItemDetail] = Field(default_factory=list)
 
     @model_validator(mode='after')
     def validate_state(self):
@@ -83,27 +110,32 @@ class HumanLabel(Model):
 
 
 class HumanReview(Model):
-    label_schema_version: Literal['job-profile-human-v1.0','job-profile-human-v1.1'] = LABEL_VERSION
+    label_schema_version: Literal['job-profile-human-v1.0','job-profile-human-v1.1','job-profile-human-v1.2'] = LABEL_VERSION
     job_id: str
     profile_input_hash: str = Field(pattern=r'^[0-9a-f]{64}$')
     sample_snapshot: str
     reviewer_id: str | None = None
     reviewed_at: datetime | None = None
     reviewer_notes: str | None = None
+    review_complete: bool = False
+    frozen_versions: dict[str, str] = Field(default_factory=dict)
+    cohort_hash: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
     labels: dict[str, HumanLabel] = Field(default_factory=lambda: {field: HumanLabel() for field in FIELDS})
 
     @model_validator(mode='before')
     @classmethod
     def legacy_labels(cls, data):
-        if isinstance(data, dict) and data.get('label_schema_version') == 'job-profile-human-v1.0' and set(data.get('labels', {})) == set(LEGACY_FIELDS):
-            data = {**data, 'labels': {**data['labels'], **{field: {} for field in FIELDS if field not in LEGACY_FIELDS}}}
+        if isinstance(data, dict):
+            previous = {'job-profile-human-v1.0': LEGACY_FIELDS, 'job-profile-human-v1.1': V11_FIELDS}.get(data.get('label_schema_version'))
+            if previous and set(data.get('labels', {})) == set(previous):
+                data = {**data, 'labels': {**data['labels'], **{field: {} for field in FIELDS if field not in previous}}}
         return data
 
     @model_validator(mode='after')
     def validate_labels(self):
         if set(self.labels) != set(FIELDS):
             raise ValueError('All reviewed fields must be explicit; unexpected label field')
-        if any(label.state != 'unlabeled' for label in self.labels.values()) and (not self.reviewer_id or not self.reviewed_at):
+        if (self.review_complete or any(label.state != 'unlabeled' for label in self.labels.values())) and (not self.reviewer_id or not self.reviewed_at):
             raise ValueError('Reviewed labels require reviewer identity and timestamp')
         enums = {
             'career_level': {'entry','junior','mid','senior','staff','principal'},
@@ -111,7 +143,7 @@ class HumanReview(Model):
             'employment_schedule': {'full_time','part_time','shift'},
             'relationship': {'employee','contractor','intern','temporary'},
             'duration': {'permanent','fixed_term'},
-            'opportunity_type': {'vacancy','talent_pool','internship_program','event','hackathon'},
+            'opportunity_type': {'vacancy','talent_pool','internship_program','event','hackathon','other'},
         }
         for field, label in self.labels.items():
             if label.state != 'known':
@@ -119,7 +151,7 @@ class HumanReview(Model):
             if field in COLLECTIONS:
                 if not isinstance(label.value, list):
                     raise ValueError('Collection labels must contain a list')
-                if field in {'technologies','required_technologies','city','country'} and not all(isinstance(x, str) and x for x in label.value):
+                if field in {'technologies','required_technologies','required_skills','preferred_skills','city','country'} and not all(isinstance(x, str) and x for x in label.value):
                     raise ValueError('Name collections must contain nonempty normalized strings')
                 if field == 'country' and any(not re.fullmatch(r'[A-Z]{2}', x) for x in label.value):
                     raise ValueError('Country labels use ISO alpha-2')
@@ -133,12 +165,17 @@ class HumanReview(Model):
                          'compensation':LabelCompensation, 'base_compensation':LabelCompensation}.get(field)
                 if shape:
                     label.value = [shape.model_validate(item).model_dump(mode='json') for item in label.value]
-            elif field in {'is_normal_vacancy','people_management'}:
+            elif field in {'is_normal_vacancy','people_management','base_compensation_present'}:
                 if not isinstance(label.value, bool):
                     raise ValueError('Boolean labels require true/false')
             elif not isinstance(label.value, str) or field in enums and label.value not in enums[field]:
                 raise ValueError('Invalid categorical human label')
         return self
+
+
+def base_present(profile):
+    offers = prediction_fact(profile, 'base_compensation')
+    return Fact(state='known', value=True, evidence_ids=offers.evidence_ids) if offers.state == ValueState.KNOWN else Fact()
 
 
 def prediction_fact(profile, field):
@@ -163,6 +200,8 @@ def prediction_fact(profile, field):
         'opportunity_type': profile.metadata.opportunity_type, 'is_normal_vacancy': profile.metadata.is_normal_vacancy,
         'people_management': profile.role.people_management, 'duration': profile.employment.duration,
         'required_technologies': Fact(),
+        'required_skills': profile.requirements.required_skills, 'preferred_skills': profile.requirements.preferred_skills,
+        'base_compensation_present': base_present(profile),
         'normalized_role': profile.role.normalized_role, 'job_family': profile.role.job_family,
         'career_level': profile.role.career_level, 'workplace': profile.workplace.mode,
         'employment_schedule': profile.employment.schedule, 'relationship': profile.employment.relationship,
@@ -183,10 +222,13 @@ def tokens(field, value):
         if field == 'technologies' and isinstance(item, dict):
             item = item['technology']
         elif field == 'languages':
+            next_item_max = item.get('cefr_max')
             comparator = item.get('cefr_comparator') or ('at_least' if item.get('cefr_or_higher') else 'unknown' if item.get('cefr') else None)
             item = {k: item.get(k) for k in ('language','requirement','cefr','cefr_or_higher')}
             item['cefr_comparator'] = comparator
             item['cefr_or_higher'] = (comparator == 'at_least') if item['cefr'] else None
+            if comparator == 'range':
+                item['cefr_max'] = next_item_max
 
         elif field == 'experience':
             item = {k: str(Decimal(str(item[k])).normalize()) if item.get(k) is not None else None for k in ('min_years','max_years')}
@@ -237,6 +279,12 @@ def evaluate_labels(profiles, labels):
     return result
 
 
+def parse_complete(value):
+    if str(value).lower() not in {'true','false'}:
+        raise ValueError('Review completion must be true/false')
+    return str(value).lower() == 'true'
+
+
 def load_reviews(path):
     """Read independent labels in JSONL or the generated editable CSV format."""
     path = Path(path)
@@ -251,15 +299,19 @@ def load_reviews(path):
                 raw = row.get(field+'_value') or ''
                 value = None
                 if raw:
-                    if field in COLLECTIONS or field in {'is_normal_vacancy','people_management'}:
+                    if field in COLLECTIONS or field in {'is_normal_vacancy','people_management','base_compensation_present'}:
                         value = json.loads(raw)
                     else:
                         value = raw
-                labels[field] = HumanLabel(state=state, value=value, notes=row.get(field+'_notes') or None)
+                labels[field] = HumanLabel(state=state, value=value, notes=row.get(field+'_notes') or None,
+                    evidence_text=row.get(field+'_evidence') or None,
+                    item_details=json.loads(row.get(field+'_items') or '[]'))
             reviews.append(HumanReview(job_id=row['job_id'], profile_input_hash=row['profile_input_hash'],
                 sample_snapshot=row['sample_snapshot'], label_schema_version=row['label_schema_version'],
                 reviewer_id=row.get('reviewer_id') or None, reviewed_at=row.get('reviewed_at') or None,
-                reviewer_notes=row.get('reviewer_notes') or None, labels=labels))
+                reviewer_notes=row.get('reviewer_notes') or None, labels=labels,
+                review_complete=parse_complete(row.get('review_complete') or 'false'),
+                frozen_versions=json.loads(row.get('frozen_versions') or '{}'), cohort_hash=row.get('cohort_hash') or None))
     return reviews
 
 
@@ -275,6 +327,7 @@ def main(argv=None):
     metrics.add_argument('--labels', required=True, type=Path)
     metrics.add_argument('--profiles', required=True, type=Path)
     metrics.add_argument('--output', required=True, type=Path)
+    metrics.add_argument('--completed-only', action='store_true')
     args = parser.parse_args(argv)
     profiles = {p.metadata.job_id: p for p in (JobProfile.model_validate_json(line) for line in args.profiles.read_text().splitlines())}
     if args.command == 'template':
@@ -284,6 +337,8 @@ def main(argv=None):
         args.output.write_text(''.join(row.model_dump_json()+'\n' for row in rows))
     else:
         labels = load_reviews(args.labels)
+        if args.completed_only:
+            labels = [row for row in labels if row.review_complete]
         args.output.write_text(json.dumps(evaluate_labels(profiles, labels), indent=2)+'\n')
 
 
