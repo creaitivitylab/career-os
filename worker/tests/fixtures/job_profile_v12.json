@@ -1,0 +1,104 @@
+{
+  "talent_pool": {
+    "source_name": "smartrecruiters_direct",
+    "raw_payload": {
+      "name": "Pošlete nám svůj životopis",
+      "jobAd": {
+        "sections": {
+          "jobDescription": {
+            "text": "<p>Chcete se přidat k našemu týmu, ale nemáme zrovna volnou pozici, která Vás by Vás zaujala? Nevadí, pošlete nám svůj životopis, třeba něco vymyslíme:-) Dejte nám vědět, co by Vás zajímalo - jaká oblast nebo pozice. Co nabízíme my?&#xa0;</p>"
+          }
+        }
+      }
+    }
+  },
+  "hackathon": {
+    "source_name": "greenhouse_direct",
+    "raw_payload": {
+      "title": "SF Quant Hackathon 2026",
+      "content": "&lt;p&gt;SF Quant Hackathon 2026&lt;/p&gt;"
+    }
+  },
+  "scoped_offers": {
+    "source_name": "greenhouse_direct",
+    "raw_payload": {
+      "title": "VP of Product & Engineering - Back of House",
+      "pay_input_ranges": [
+        {
+          "blurb": "",
+          "title": "Spain",
+          "max_cents": 28000000,
+          "min_cents": 22000000,
+          "currency_type": "EUR"
+        },
+        {
+          "blurb": "",
+          "title": "UK",
+          "max_cents": 26000000,
+          "min_cents": 14000000,
+          "currency_type": "GBP"
+        },
+        {
+          "blurb": "",
+          "title": "Netherlands",
+          "max_cents": 28000000,
+          "min_cents": 22000000,
+          "currency_type": "EUR"
+        },
+        {
+          "blurb": "",
+          "title": "France",
+          "max_cents": 28000000,
+          "min_cents": 22000000,
+          "currency_type": "EUR"
+        },
+        {
+          "blurb": "",
+          "title": "Germany",
+          "max_cents": 28000000,
+          "min_cents": 22000000,
+          "currency_type": "EUR"
+        },
+        {
+          "blurb": "",
+          "title": "Sweden",
+          "max_cents": 233050000,
+          "min_cents": 136750000,
+          "currency_type": "SEK"
+        },
+        {
+          "blurb": "",
+          "title": "United States ",
+          "max_cents": 35000000,
+          "min_cents": 28000000,
+          "currency_type": "USD"
+        },
+        {
+          "blurb": "",
+          "title": "Ireland",
+          "max_cents": 28000000,
+          "min_cents": 22000000,
+          "currency_type": "EUR"
+        }
+      ]
+    }
+  },
+  "pension": {
+    "source_name": "workday_direct",
+    "raw_payload": {
+      "detail": {
+        "jobPostingInfo": {
+          "title": "Senior HR Generalist",
+          "jobDescription": "- Contribution to supplementary pension insurance 1000 CZK/month (after the probationary period)"
+        }
+      }
+    }
+  },
+  "language": {
+    "source_name": "fantastic_jobs_apify",
+    "raw_payload": {
+      "title": "Freelance Mechanical CAD&Simulation Engineer - AI Trainer",
+      "description_text": "English at B2 level or above."
+    }
+  }
+}

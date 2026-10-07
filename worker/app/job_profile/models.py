@@ -124,6 +124,7 @@ class CompensationOffer(Model):
     gross_net_status: Literal["gross", "net", "unknown"] = "unknown"
     component: Literal["base", "bonus", "equity", "task_reward", "other", "unknown"] = "unknown"
     applicable_locations: list[str] | None = None
+    original_location_labels: list[str] | None = None
     original_text: str | None = None
     explicitness: Literal["explicit", "inferred", "unknown"] = "explicit"
     evidence_ids: list[str]
@@ -151,6 +152,7 @@ class LanguageRequirement(Model):
     requirement: Literal["required", "preferred", "unknown"] = "unknown"
     cefr: Literal["A1", "A2", "B1", "B2", "C1", "C2"] | None = None
     cefr_or_higher: bool | None = None
+    cefr_comparator: Literal["at_least", "exact", "unknown"] | None = None
     proficiency_wording: str
     evidence_ids: list[str]
 
@@ -207,6 +209,8 @@ class Metadata(Model):
     company: Fact[str] = Field(default_factory=Fact[str])
     published_at: Fact[str] = Field(default_factory=Fact[str])
     expires_at: Fact[str] = Field(default_factory=Fact[str])
+    opportunity_type: Fact[Literal["vacancy", "talent_pool", "internship_program", "event", "hackathon", "unknown"]] = Field(default_factory=Fact)
+    is_normal_vacancy: Fact[bool] = Field(default_factory=Fact[bool])
 
 
 class Role(Model):
@@ -235,6 +239,8 @@ class Employment(Model):
 
 class Compensation(Model):
     offers: Fact[list[CompensationOffer]] = Field(default_factory=Fact)
+    # Text-only benefit evidence, deliberately separate from salary offers.
+    monetary_benefits: Fact[list[str]] = Field(default_factory=Fact)
 
 
 class Requirements(Model):

@@ -9,7 +9,8 @@ from .models import (CareerContext, Compensation, Content, Employment, Fact, Ide
                      Span, ValueState, Workplace, TechnologyMention, LanguageRequirement,
                      ExperienceConstraint, ContentSection, CompensationOffer)
 from .parsers import (employment_values, experience, languages, salary, sections,
-                      technologies, title_facts, workplace_mode)
+                      technologies, title_facts, workplace_mode, monetary_benefits)
+from .opportunity import title_candidates as opportunity_titles, description_candidates as opportunity_description, resolve_opportunity
 from .projectors import project_source
 from .selection import DIRECT, evidence_rank, select_description, select_fact
 from .versions import versions
@@ -115,6 +116,8 @@ def build_profile(job: dict, *, generated_at: datetime | None = None,
             for field, fn in [("technologies", technologies), ("languages", languages), ("experience", experience), ("sections", sections), ("compensation", salary)]:
                 parsed[field] = fn(cleaned, source, collector)
             clauses = text_facts(cleaned, source, collector)
+            clauses["opportunity_type"] = opportunity_description(cleaned, source, collector)
+            clauses["monetary_benefits"] = monetary_benefits(cleaned, source, collector)
             layer = {'key': cache_key,
                 'parsed': {field: [item.model_dump(mode='json') for item in items] for field, items in parsed.items()},
                 'clauses': {field: [item.model_dump(mode='json') for item in items] for field, items in clauses.items()},
@@ -123,6 +126,19 @@ def build_profile(job: dict, *, generated_at: datetime | None = None,
             cache_out.update(layer)
         for field, facts in clauses.items():
             native_candidates.setdefault(field, []).extend(facts)
+    title_fact = select_fact("title", title_candidates, collector)
+    title_evidence = None
+    if title_fact.value:
+        title_evidence = max((collector.records[i] for i in title_fact.evidence_ids
+            if collector.records[i].value == title_fact.value), key=lambda e: evidence_rank("title", e))
+    title_source = next((s for s in sources if title_evidence and s.source_name == title_evidence.source_name
+        and s.source_job_id == title_evidence.source_job_id), None)
+    opportunity_candidates = list(native_candidates.get("opportunity_type", []))
+    if title_source:
+        opportunity_candidates.extend(opportunity_titles(title_fact.value, title_source, title_evidence.native_field_path, collector))
+    opportunity, normal_vacancy = resolve_opportunity(opportunity_candidates, collector)
+    benefits = native_candidates.get("monetary_benefits", [])
+    monetary_benefit_fact = known_list([b.value for b in benefits], [i for b in benefits for i in b.evidence_ids]) if benefits else Fact()
     unavailable = ValueState.NOT_MENTIONED if quality == "complete" else ValueState.INSUFFICIENT
     def selected_fact(field):
         return select_fact(field, native_candidates.get(field, []), collector)
@@ -173,13 +189,14 @@ def build_profile(job: dict, *, generated_at: datetime | None = None,
             source_inputs_hash=source_inputs_hash, input_hash=digest,
             generated_at=generated_at or datetime.now(timezone.utc), identities=identities,
             title=select_fact("title", title_candidates, collector), company=selected_fact("company"),
-            published_at=selected_fact("published_at"), expires_at=selected_fact("expires_at")),
+            published_at=selected_fact("published_at"), expires_at=selected_fact("expires_at"),
+            opportunity_type=opportunity, is_normal_vacancy=normal_vacancy),
         role=Role(original_title=select_fact("title", title_candidates, collector),
             normalized_role=selected_fact("normalized_role"), career_level=selected_fact("career_level"),
             leadership_markers=selected_fact("leadership_markers"), native_level=selected_fact("native_level")),
         workplace=Workplace(locations=location_fact, raw_location_labels=raw_label_fact, mode=selected_fact("workplace")),
         employment=Employment(schedule=selected_fact("schedule"), relationship=selected_fact("relationship"), duration=selected_fact("duration")),
-        compensation=Compensation(offers=compensation),
+        compensation=Compensation(offers=compensation, monetary_benefits=monetary_benefit_fact),
         requirements=Requirements(technologies=parsed_fact("technologies"), languages=parsed_fact("languages"),
             experience=parsed_fact("experience"), education=selected_fact("education")),
         content=Content(cleaned_description=desc_fact, selected_source_name=selected[1].source.source_name if selected else None,

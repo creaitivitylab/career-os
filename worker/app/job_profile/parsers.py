@@ -183,15 +183,21 @@ def languages(text, source, evidence):
             required = bool(re.search(r"required|essential|must|podmín|podmin|nutn", qualifier, re.I))
             preferred = bool(re.search(r"preferred|advantage|a plus|výhod|vyhod", qualifier, re.I))
             requirement = "required" if required and not preferred else "preferred" if preferred and not required else "unknown"
-            level_pattern = r"(?<!\w)([ABC][12])(\+|\s+or higher)?(?!\w)"
-            level = re.search(level_pattern, after[:45], re.I)
+            level_pattern = r"(?<!\w)([ABC][12])(?!\w)(\+|\s+(?:level\s+)?or\s+(?:above|higher))?"
+            level_context = after[:65]
+            level = re.search(level_pattern, level_context, re.I)
             if level is None and index == 0:
-                level = re.search(level_pattern, before[-30:], re.I)
+                level_context = before[-30:]
+                level = re.search(level_pattern, level_context, re.I)
+            lower_bound = bool(level and (level.group(2) or re.search(
+                r"(?:minimum(?: of)?|at least|min\.?|minimálně|alespoň)\s*$", level_context[:level.start()], re.I)))
+            comparator = "at_least" if lower_bound else "exact" if level and re.search(
+                r"exactly\s*$", level_context[:level.start()], re.I) else "unknown" if level else None
             span = Span(start=clause.start(), end=clause.end(), text=body)
-            key = evidence.add(source, "languages", {"language": code, "requirement": requirement, "cefr": level.group(1).upper() if level else None},
+            key = evidence.add(source, "languages", {"language": code, "requirement": requirement, "cefr": level.group(1).upper() if level else None, "cefr_comparator": comparator},
                                span=span, method=Method.PARSER, input_value=text)
             values.append(LanguageRequirement(language=code, requirement=requirement,
-                cefr=level.group(1).upper() if level else None, cefr_or_higher=bool(level.group(2)) if level else None,
+                cefr=level.group(1).upper() if level else None, cefr_or_higher=lower_bound if level else None, cefr_comparator=comparator,
                 proficiency_wording=body.strip(), evidence_ids=[key]))
     return values
 
@@ -274,7 +280,7 @@ PAY = re.compile(r"(?<!\w)(?P<prefix>€\s*)?(?P<min>" + PAY_NUMBER + r")"
     r"(?:\s*[-–—]\s*(?P<max>" + PAY_NUMBER + r"))?\s*"
     r"(?P<currency>CZK|Kč|EUR|USD|GBP)?\s*"
     r"(?:(?:/|per\s+)\s*(?P<unit>month|year|hour|day)|(?P<period>monthly|annually|annual|yearly|hourly|měsíčně|mesicne|ročně|rocne|hodinu))\b", re.I)
-NON_SALARY = re.compile(r"bonus|referr|reward|voucher|revenue|budget|meal|benefit|sign.on|signing|stipend|cafeteria|multisport|příspěv|prispev|straven|obrat|odměn|odmen", re.I)
+NON_SALARY = re.compile(r"bonus|referr|reward|voucher|revenue|budget|meal|benefit|sign.on|signing|stipend|cafeteria|multisport|pension|retirement contribution|wellness allowance|commuting allowance|travel allowance|příspěv|prispev|straven|obrat|odměn|odmen", re.I)
 
 
 def salary(text, source, evidence):
@@ -313,4 +319,31 @@ def salary(text, source, evidence):
         values.append(CompensationOffer(min_amount=minimum, max_amount=maximum, currency=currency,
             period=period, gross_net_status=basis, component="base" if re.search(r"salary|base pay|mzda|plat\b", line, re.I) else "unknown",
             applicable_locations=list(dict.fromkeys(locations)) or None, original_text=line, evidence_ids=[key]))
+    return values
+
+
+def monetary_benefits(text, source, evidence):
+    """Retain explicit monetary benefit lines without claiming salary offers."""
+    values = []
+    seen = set()
+    benefit = re.compile(r"pension|retirement contribution|meal allowance|wellness allowance|commuting allowance|referr|voucher|příspěv|prispev|straven", re.I)
+    for match in PAY.finditer(text):
+        start = text.rfind("\n", 0, match.start()) + 1
+        end = text.find("\n", match.end())
+        end = end if end >= 0 else len(text)
+        line = text[start:end]
+        # Some native descriptions are one long line. Do not put an entire
+        # job ad into a benefit assertion or link distant unrelated amounts.
+        if len(line) > 400:
+            start = max(start, match.start()-140)
+            end = min(end, match.end()+80)
+            if start and not text[start-1].isspace():
+                boundary = text.find(" ", start, match.start())
+                start = boundary+1 if boundary >= 0 else start
+            line = text[start:end]
+        if (start, end) in seen or not benefit.search(line) or not (match.group("prefix") or match.group("currency")):
+            continue
+        seen.add((start, end))
+        values.append(evidence.fact(source, "monetary_benefits", line.strip(),
+            span=Span(start=start, end=end, text=line), method=Method.PARSER, input_value=text))
     return values

@@ -1,8 +1,8 @@
-SCHEMA_VERSION = "job-profile-v1.1"
-PROJECTOR_VERSION = "native-v1.1"
+SCHEMA_VERSION = "job-profile-v1.2"
+PROJECTOR_VERSION = "native-v1.2"
 GEOGRAPHY_VERSION = "geography-v1.1"
 CLEANER_VERSION = "description-v1.0"
-PARSER_VERSION = "deterministic-v1.0"
+PARSER_VERSION = "deterministic-v1.1"
 DICTIONARY_VERSION = "technology-v1.0"
 TAXONOMY_VERSION = "unmapped-v1.0"
 

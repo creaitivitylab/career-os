@@ -5,7 +5,8 @@ import re
 
 from .evidence import EvidenceCollector
 from .models import CompensationOffer, Fact, Location, Method, RawLocationLabel, SourceInput
-from .geography import COUNTRIES, city, country_code, label_components, non_geographic_reason, parse_label, region
+from .geography import (COUNTRIES, CITY_ALIASES, city, country_code, label_components,
+                        non_geographic_reason, parse_label, region, fold as geography_fold)
 from .parsers import (amount, employment_values, fold, native_level,
                       pay_period, workplace_mode, PAY_NUMBER)
 from .selection import DescriptionCandidate
@@ -209,12 +210,14 @@ class Projector:
             component = "task_reward"
         key = self.evidence.add(self.source, "compensation", {"min": str(lo) if lo else None,
             "max": str(hi) if hi else None, "currency": currency, "period": period, "component": component,
-            "locations": pay.get("locations")}, path="raw_payload."+path, method=self.method,
+            "locations": pay.get("locations"),
+            **({"original_location_labels": pay["location_labels"]} if pay.get("location_labels") else {}),
+            **({"native_offer_label": pay["offer_label"]} if pay.get("offer_label") else {})}, path="raw_payload."+path, method=self.method,
             input_value=self.value(path), explicitness="unknown" if self.method == Method.PROVIDER else "explicit",
             confidence="medium" if self.method == Method.PROVIDER else "high")
         self.result.offers.append(CompensationOffer(min_amount=lo, max_amount=hi, currency=currency,
             period=period, component=component, applicable_locations=pay.get("locations"),
-            original_text=pay.get("text"), explicitness="unknown" if self.method == Method.PROVIDER else "explicit", evidence_ids=[key]))
+            original_text=pay.get("text"), original_location_labels=pay.get("location_labels"), explicitness="unknown" if self.method == Method.PROVIDER else "explicit", evidence_ids=[key]))
 
 
 def smartrecruiters(p):
@@ -266,9 +269,17 @@ def greenhouse(p):
         if isinstance(pay, dict):
             title = text(pay.get("title")) or ""
             component = "base" if re.search(r"base salary", title, re.I) else "unknown"
+            # The title belongs to this native pay range. Exact recognized
+            # geography establishes a scope; arbitrary range titles do not.
+            code = country_code(title.strip())
+            city = CITY_ALIASES.get(geography_fold(title))
+            if geography_fold(title) == "paris":
+                city = "Paris"
+            scope = [COUNTRIES[code]] if code else [city] if city else None
             p.offer(f"pay_input_ranges[{i}]", {"min": pay.get("min_cents"), "max": pay.get("max_cents"),
-                "currency": pay.get("currency_type"), "component": component, "text": title,
-                "locations": [title] if re.search(r"Prague|Czech|Paris|Spain|Sweden|Ireland|United Kingdom", title, re.I) else None}, minor_units=True)
+                "currency": pay.get("currency_type"), "component": component, "text": pay.get("title") if isinstance(pay.get("title"), str) else title,
+                "locations": scope, "location_labels": [pay["title"]] if scope else None,
+                "offer_label": pay.get("title") if isinstance(pay.get("title"), str) else None}, minor_units=True)
     p.description(["content"])
 
 
