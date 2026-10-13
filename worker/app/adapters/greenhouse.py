@@ -1,3 +1,4 @@
+from app.operation_budget import check_deadline
 from typing import Any
 
 import httpx
@@ -20,6 +21,7 @@ class GreenhouseAdapter:
         )
 
         with httpx.Client(timeout=60.0) as client:
+            check_deadline()
             response = client.get(
                 url,
                 params={
@@ -65,6 +67,7 @@ class GreenhouseAdapter:
         )
 
         with httpx.Client(timeout=60.0) as client:
+            check_deadline()
             response = client.get(
                 url,
                 params={

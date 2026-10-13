@@ -1,3 +1,4 @@
+from app.operation_budget import check_deadline
 from typing import Any
 
 import httpx
@@ -33,6 +34,7 @@ class SmartRecruitersAdapter:
                     f"{company_identifier}/postings"
                 )
 
+                check_deadline()
                 response = client.get(
                     url,
                     params={
@@ -95,6 +97,7 @@ class SmartRecruitersAdapter:
 
         with httpx.Client(timeout=60.0) as client:
 
+            check_deadline()
             response = client.get(
                 url,
                 headers={

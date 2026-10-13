@@ -1,4 +1,5 @@
 """Anonymous SAP Recruiting Marketing frontends, not authenticated RCM/OData."""
+from app.operation_budget import check_deadline
 import html
 import ipaddress
 import json
@@ -488,6 +489,7 @@ class SuccessFactorsAdapter:
             try:
                 self.counters["http_requests"] += 1
                 self.counters["get_requests" if method == "GET" else "post_requests"] += 1
+                check_deadline()
                 response = self.client.request(method, url, headers={"User-Agent": "CareerOS/1.0 (public RMK careers)",
                     **kwargs.pop("headers", {})}, **kwargs)
             except httpx.HTTPError as exc:

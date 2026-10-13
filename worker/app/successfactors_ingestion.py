@@ -16,6 +16,7 @@ from app.adapters.successfactors import (
 )
 from app.canonical import update_canonical_job
 from app.lifecycle import LifecycleRun, InventoryCompletion
+from app.operation_budget import commit_inventory
 from app.ingestion import get_or_create_company
 from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
 from app.successfactors_scopes import apply_scope_gate, load_scope_gate
@@ -311,17 +312,17 @@ def ingest_successfactors_jobs(host=None, brand=None, locale=None, max_sites=Non
                     "requested_scope_complete": processed == len(sites) and not errors and not totals["failed"],
                     "coverage_complete": not validated_scopes and host is None and max_sites is None and processed == len(sites) and not errors and not totals["failed"],
                     **totals, "site_results": results, "site_errors": errors}
-                cur.execute("""update public.ingestion_runs set finished_at = now(), status = %s,
+                cur.execute("""update public.ingestion_runs set finished_at = clock_timestamp(), status = %s,
                     error_message = %s, records_fetched = %s, records_created = %s,
                     records_updated = %s, records_failed = %s, metadata = %s where id = %s""",
                     (status, ALL_TENANTS_FAILED if status == "failed" else None, totals["listing_records"],
                      totals["created"], totals["attached"] + totals["updated"], totals["failed"], Jsonb(metadata), run_id))
-                conn.commit()
+                commit_inventory(conn)
                 return {"status": status, "run_id": str(run_id), **metadata}
             except Exception as exc:
                 conn.rollback()
                 with conn.cursor() as error_cur:
-                    error_cur.execute("""update public.ingestion_runs set finished_at = now(),
+                    error_cur.execute("""update public.ingestion_runs set finished_at = clock_timestamp(),
                         status = 'failed', error_message = %s where id = %s""", (type(exc).__name__, run_id))
                 conn.commit()
                 raise

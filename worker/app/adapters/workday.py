@@ -2,6 +2,7 @@
 import json
 import re
 import unicodedata
+from app.operation_budget import check_deadline
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote, unquote, urlsplit
@@ -277,6 +278,7 @@ class WorkdayAdapter:
 
     def _request(self, method: str, board: WorkdaySite, path: str, body=None):
         try:
+            check_deadline()
             response = self.client.request(method, board.api_base + path, json=body,
                 headers={"Accept": "application/json", "Accept-Language": board.locale,
                          "User-Agent": "CareerOS/1.0 (public careers API)"})

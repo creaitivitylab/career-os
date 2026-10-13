@@ -11,6 +11,7 @@ from psycopg.types.json import Jsonb
 
 from app.canonical import update_canonical_job
 from app.lifecycle import LifecycleRun, InventoryCompletion
+from app.operation_budget import commit_inventory
 from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
 
 from app.adapters.workable import WorkableAdapter
@@ -1054,7 +1055,7 @@ def ingest_workable_jobs(
                     """
                     update public.ingestion_runs
                     set
-                        finished_at = now(),
+                        finished_at = clock_timestamp(),
                         status = %s,
                         error_message = %s,
                         records_fetched = %s,
@@ -1095,7 +1096,7 @@ def ingest_workable_jobs(
                     ),
                 )
 
-                conn.commit()
+                commit_inventory(conn)
 
                 return {
                     "lifecycle": lifecycle.summary(),
@@ -1146,7 +1147,7 @@ def ingest_workable_jobs(
                         """
                         update public.ingestion_runs
                         set
-                            finished_at = now(),
+                            finished_at = clock_timestamp(),
                             status = 'failed',
                             error_message = %s
                         where id = %s

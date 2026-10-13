@@ -1,3 +1,4 @@
+from app.operation_budget import check_deadline
 from typing import Any
 
 import httpx
@@ -28,6 +29,7 @@ class AshbyAdapter:
             },
         ) as client:
 
+            check_deadline()
             response = client.get(
                 url,
                 params={

@@ -1,3 +1,4 @@
+from app.operation_budget import check_deadline
 from typing import Any
 
 import httpx
@@ -25,6 +26,7 @@ class WorkableAdapter:
             },
         ) as client:
 
+            check_deadline()
             response = client.get(
                 url,
                 params={

@@ -1,3 +1,4 @@
+from app.operation_budget import check_deadline
 import re
 from typing import Any, Literal, NamedTuple
 from urllib.parse import unquote, urlsplit
@@ -74,6 +75,7 @@ class LeverAdapter:
             while True:
                 if len(seen_pages) >= 1000:
                     raise RuntimeError("Lever pagination safety limit reached")
+                check_deadline()
                 response = client.get(url, params={
                     "mode": "json", "limit": self.PAGE_SIZE, "skip": len(jobs),
                 })

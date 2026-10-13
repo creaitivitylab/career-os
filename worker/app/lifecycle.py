@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from psycopg.types.json import Jsonb
 
 from app.source_priority import SOURCE_PRIORITY
+from app.operation_budget import check_deadline, note_run_id
 
 
 DIRECT_SOURCES = tuple(name for name, priority in SOURCE_PRIORITY.items() if priority == 300)
@@ -86,6 +87,7 @@ class LifecycleRun:
         if source not in DIRECT_SOURCES:
             raise ValueError("Incomplete feed cannot reconcile absence")
         self.cur, self.source, self.run_id = cur, source, str(run_id)
+        note_run_id(run_id)
         self.results = []
         # A single transaction lock serializes same-source runs, including RMK
         # identities shared across brands. Busy runs fail before fetching/writing.
@@ -97,6 +99,7 @@ class LifecycleRun:
             raise RuntimeError("Another ingestion for this source is already running")
 
     def scope(self, *parts):
+        check_deadline()
         return InventoryScope(self, parts)
 
     def summary(self):
@@ -115,6 +118,7 @@ class InventoryScope:
         self.seen, self.finished = set(), False
 
     def observe(self, identity):
+        check_deadline()
         if not isinstance(identity, str) or not identity:
             raise ValueError("Missing native source identity")
         prefix = (self.parts[1:] if self.run.source == "workday_direct" else
@@ -125,6 +129,7 @@ class InventoryScope:
         self.seen.add(identity)
 
     def finish(self, completion):
+        check_deadline()
         if self.finished:
             raise RuntimeError("Scope already completed")
         self.finished = True

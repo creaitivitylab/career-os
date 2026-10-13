@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "groups": {
+    "light": {"deadline_seconds": 1800, "expected_seconds": 1200},
+    "heavy": {"deadline_seconds": 14400, "expected_seconds": 10800},
+    "all": {"deadline_seconds": 16200, "expected_seconds": 12000}
+  },
+  "source_deadlines_seconds": {
+    "smartrecruiters_direct": 600,
+    "greenhouse_direct": 600,
+    "workable_direct": 300,
+    "ashby_direct": 300,
+    "lever_direct": 900,
+    "workday_direct": 9000,
+    "successfactors_direct": 5400
+  },
+  "collapse_ratio": 0.2,
+  "busy_warning_seconds": 14400
+}

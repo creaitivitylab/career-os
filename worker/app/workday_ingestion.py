@@ -15,6 +15,7 @@ from app.adapters.workday import (
 )
 from app.canonical import update_canonical_job
 from app.lifecycle import LifecycleRun, InventoryCompletion
+from app.operation_budget import commit_inventory
 from app.ingestion import get_or_create_company
 from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
 
@@ -302,17 +303,17 @@ def ingest_workday_jobs(host=None, tenant=None, site=None, max_sites=None, local
                 metadata = {"lifecycle": lifecycle.summary(), **request, "sites_discovered": len(discovered), "sites": len(sites),
                     "fantastic_inventory_rows": len(rows),
                     "successful_sites": successful_sites, **totals, "site_errors": site_errors, "site_results": site_results}
-                cur.execute("""update public.ingestion_runs set finished_at = now(), status = %s,
+                cur.execute("""update public.ingestion_runs set finished_at = clock_timestamp(), status = %s,
                     error_message = %s, records_fetched = %s, records_created = %s,
                     records_updated = %s, records_failed = %s, metadata = %s where id = %s""",
                     (status, ALL_TENANTS_FAILED if status == "failed" else None, totals["listing_records"],
                      totals["created"], totals["updated"] + totals["attached"], totals["failed"], Jsonb(metadata), run_id))
-                conn.commit()
+                commit_inventory(conn)
                 return {"status": status, "run_id": str(run_id), **metadata}
             except Exception as exc:
                 conn.rollback()
                 with conn.cursor() as error_cur:
-                    error_cur.execute("""update public.ingestion_runs set finished_at = now(),
+                    error_cur.execute("""update public.ingestion_runs set finished_at = clock_timestamp(),
                         status = 'failed', error_message = %s where id = %s""", (str(exc), run_id))
                 conn.commit()
                 raise
