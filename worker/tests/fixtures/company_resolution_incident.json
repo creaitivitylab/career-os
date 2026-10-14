@@ -1,0 +1,87 @@
+[
+  {
+    "name": "2N TELEKOMUNIKACE a.s.",
+    "normalized_key": "2n telekomunikace",
+    "old_python_key": "2n telekomunikace a.s."
+  },
+  {
+    "name": "Apify Technologies s.r.o.",
+    "normalized_key": "apify technologies",
+    "old_python_key": "apify technologies s.r.o."
+  },
+  {
+    "name": "D-ploy",
+    "normalized_key": "d ploy",
+    "old_python_key": "d-ploy"
+  },
+  {
+    "name": "Emplifi (external posting)",
+    "normalized_key": "emplifi external posting",
+    "old_python_key": "emplifi (external posting)"
+  },
+  {
+    "name": "Fluentbe.com",
+    "normalized_key": "fluentbe com",
+    "old_python_key": "fluentbe.com"
+  },
+  {
+    "name": "G-P",
+    "normalized_key": "g p",
+    "old_python_key": "g-p"
+  },
+  {
+    "name": "Gen Digital Inc.",
+    "normalized_key": "gen digital",
+    "old_python_key": "gen digital inc."
+  },
+  {
+    "name": "GoodData.AI",
+    "normalized_key": "gooddata ai",
+    "old_python_key": "gooddata.ai"
+  },
+  {
+    "name": "H&M Group",
+    "normalized_key": "h m group",
+    "old_python_key": "h&m group"
+  },
+  {
+    "name": "LILT (Production)",
+    "normalized_key": "lilt production",
+    "old_python_key": "lilt (production)"
+  },
+  {
+    "name": "OAK'S LAB",
+    "normalized_key": "oak s lab",
+    "old_python_key": "oak's lab"
+  },
+  {
+    "name": "Poland and Middle-Eastern Europe",
+    "normalized_key": "poland and middle eastern europe",
+    "old_python_key": "poland and middle-eastern europe"
+  },
+  {
+    "name": "Second Foundation Tech a.s.",
+    "normalized_key": "second foundation tech",
+    "old_python_key": "second foundation tech a.s."
+  },
+  {
+    "name": "Tribe.xyz",
+    "normalized_key": "tribe xyz",
+    "old_python_key": "tribe.xyz"
+  },
+  {
+    "name": "Turner & Townsend",
+    "normalized_key": "turner townsend",
+    "old_python_key": "turner & townsend"
+  },
+  {
+    "name": "Wolt - English",
+    "normalized_key": "wolt english",
+    "old_python_key": "wolt - english"
+  },
+  {
+    "name": "Zone & Co",
+    "normalized_key": "zone co",
+    "old_python_key": "zone & co"
+  }
+]

@@ -9,6 +9,7 @@ from psycopg.types.json import Jsonb
 
 from app.canonical import update_canonical_job
 from app.lifecycle import refresh_job_activity
+from app.company_resolution import get_or_create_company
 
 from app.adapters.jooble import JoobleDirectAdapter
 
@@ -22,52 +23,6 @@ def clean_html(value: str | None) -> str | None:
 
     text = re.sub(r"<[^>]+>", "", value)
     return html.unescape(text).strip()
-
-
-def normalize_company_name(value: str) -> str:
-    return " ".join(value.lower().split())
-
-
-def get_or_create_company(
-    cur: psycopg.Cursor,
-    company_name: str | None,
-):
-    if not company_name:
-        return None
-
-    normalized = normalize_company_name(company_name)
-
-    cur.execute(
-        """
-        select id
-        from public.companies
-        where normalized_name = %s
-        limit 1
-        """,
-        (normalized,),
-    )
-
-    existing = cur.fetchone()
-
-    if existing:
-        return existing[0]
-
-    cur.execute(
-        """
-        insert into public.companies (
-            name,
-            normalized_name
-        )
-        values (%s, %s)
-        returning id
-        """,
-        (
-            company_name.strip(),
-            normalized,
-        ),
-    )
-
-    return cur.fetchone()[0]
 
 
 def ingest_jooble_search(
