@@ -19,10 +19,30 @@ class LeverIdentity(NamedTuple):
     posting_id: str | None
 
 
+class LeverHTTPError(RuntimeError):
+    def __init__(self, status_code: int):
+        self.status_code = status_code
+        super().__init__(f"Lever postings error {status_code}")
+
+
+class LeverPaginationError(RuntimeError):
+    def __init__(self, reason: str, skip: int, rows: int, overlap: int = 0):
+        self.diagnostics = {'reason': reason, 'skip': skip, 'returned_rows': rows,
+                            'overlap_count': overlap}
+        super().__init__(f"Lever pagination did not advance safely: {reason} at skip={skip}")
+
+
 def normalize_site(site: str) -> str:
     if not isinstance(site, str) or not SITE_RE.fullmatch(site.strip()):
         raise ValueError("Invalid Lever site")
     return site.strip().lower()
+
+
+def native_site_slug(url: Any) -> str | None:
+    """Retain advertised API path case; the existing identity key stays lowercase."""
+    if parse_lever_url(url) is None:
+        return None
+    return unquote(urlsplit(url.strip()).path).strip('/').split('/')[0]
 
 
 def normalize_posting_id(value: Any) -> str | None:
@@ -62,13 +82,34 @@ def source_job_id(instance: str, site: str, posting_id: str) -> str:
 class LeverAdapter:
     PAGE_SIZE = 100
 
+    def probe(self, site: str, instance: LeverInstance = "global") -> int:
+        """Availability only: one tiny GET, never an inventory or verification."""
+        if instance not in API_HOSTS:
+            raise ValueError("Invalid Lever instance")
+        normalize_site(site)
+        check_deadline()
+        with httpx.Client(timeout=20.0, headers={'Accept': 'application/json',
+                                               'User-Agent': 'CareerOS/0.1'}) as client:
+            response = client.get(f'{API_HOSTS[instance]}/v0/postings/{site.strip()}',
+                                  params={'mode': 'json', 'limit': 1, 'skip': 0})
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                except ValueError as exc:
+                    raise RuntimeError('Invalid Lever probe JSON') from exc
+                if not isinstance(data, list) or any(not isinstance(row, dict) for row in data):
+                    raise RuntimeError('Invalid Lever probe response')
+            return response.status_code
+
     def list_postings(self, site: str, instance: LeverInstance = "global") -> list[dict[str, Any]]:
         if instance not in API_HOSTS:
             raise ValueError("Invalid Lever instance")
-        url = f"{API_HOSTS[instance]}/v0/postings/{normalize_site(site)}"
+        normalize_site(site)  # Validate the path without altering its native case.
+        url = f"{API_HOSTS[instance]}/v0/postings/{site.strip()}"
         jobs = []
         seen_pages = set()
         seen_ids = set()
+        offset = 0
         with httpx.Client(timeout=60.0, headers={
             "Accept": "application/json", "User-Agent": "CareerOS/0.1",
         }) as client:
@@ -77,23 +118,34 @@ class LeverAdapter:
                     raise RuntimeError("Lever pagination safety limit reached")
                 check_deadline()
                 response = client.get(url, params={
-                    "mode": "json", "limit": self.PAGE_SIZE, "skip": len(jobs),
+                    "mode": "json", "limit": self.PAGE_SIZE, "skip": offset,
                 })
                 if response.status_code >= 400:
-                    raise RuntimeError(f"Lever postings error {response.status_code}: {response.text[:500]}")
+                    raise LeverHTTPError(response.status_code)
                 try:
                     data = response.json()
                 except ValueError as exc:
                     raise RuntimeError("Invalid Lever JSON response") from exc
                 if not isinstance(data, list) or any(not isinstance(job, dict) for job in data):
                     raise RuntimeError("Unexpected Lever postings response")
-                fingerprint = tuple(str(job.get("id")) for job in data)
+                if any(not isinstance(job.get('id'), str) or not job['id'].strip() for job in data):
+                    raise LeverPaginationError('missing_identity', offset, len(data))
+                fingerprint = tuple(job['id'].lower() for job in data)
                 page_ids = set(fingerprint)
-                if data and (fingerprint in seen_pages or seen_ids & page_ids
-                             or len(page_ids) != len(data)):
-                    raise RuntimeError("Lever pagination did not advance")
+                if data and fingerprint in seen_pages:
+                    raise LeverPaginationError('repeated_page', offset, len(data), len(page_ids))
+                if seen_ids & page_ids:
+                    # Even one overlap can indicate offset drift and skipped jobs.
+                    raise LeverPaginationError('cross_page_overlap', offset, len(data), len(seen_ids & page_ids))
+                unique = {}
+                for key, job in zip(fingerprint, data):
+                    if key in unique and unique[key] != job:
+                        raise LeverPaginationError('conflicting_duplicate', offset, len(data))
+                    unique[key] = job
                 seen_ids.update(page_ids)
                 seen_pages.add(fingerprint)
-                jobs.extend(data)
+                jobs.extend(unique.values())
+                # Native offsets count raw slots, including identical duplicates.
+                offset += len(data)
                 if len(data) < self.PAGE_SIZE:
                     return jobs

@@ -75,7 +75,10 @@ def proven_scope(source, runs, state):
     return owned and any(s.get('scope') == scope and s.get('complete') is True and s.get('successful') is True for s in scopes)
 
 
-def classify(job, sources, runs, now, native_hours=72):
+def classify(job, sources, runs, now, native_hours=72, reviewed_gaps=None):
+    if reviewed_gaps is None:
+        from app.lever_scope_health import load_policy
+        reviewed_gaps = {tuple(r['scope']) for r in load_policy()}
     reasons = []
     if not sources:
         return 'NEEDS_VERIFICATION', ['no_sources']
@@ -87,7 +90,11 @@ def classify(job, sources, runs, now, native_hours=72):
         return 'CONFIRMED_INACTIVE', ['all_authoritative_sources_confirmed_absent']
     if withdrawn and providers and not active:
         reasons.append('direct_withdrawn_but_aggregator_present')
-    verified = [s for s in active if proven_scope(s, runs, 'observed') and
+    suspended = [s for s in active if s['source_name'] == 'lever_direct'
+                 and tuple(s['source_job_id'].split(':')[:-1]) in reviewed_gaps]
+    if suspended:
+        reasons.append('reviewed_native_scope_coverage_gap')
+    verified = [s for s in active if s not in suspended and proven_scope(s, runs, 'observed') and
                 dt(s.get('last_seen_at')) is not None and
                 dt(s['last_seen_at']) >= now - timedelta(hours=native_hours) and
                 dt(s.get('last_verified_at')) is not None and
@@ -118,6 +125,9 @@ def full_complete(run):
 
 
 def generate_report(jobs, sources, runs, now, native_hours=72):
+    from app.lever_scope_health import load_policy, scope_health_report
+    policy = load_policy()
+    reviewed_gaps = {tuple(r['scope']) for r in policy}
     now = dt(now)
     run_index = {str(r['id']): r for r in runs}
     by_job, by_source = defaultdict(list), defaultdict(list)
@@ -133,7 +143,7 @@ def generate_report(jobs, sources, runs, now, native_hours=72):
     for job in sorted(jobs, key=lambda j: str(j['id'])):
         support = by_job[str(job['id'])]
         group = composition(support)
-        state, why = classify(job, support, run_index, now, native_hours)
+        state, why = classify(job, support, run_index, now, native_hours, reviewed_gaps)
         classes[state] += 1; reasons.update(why)
         job_results.append({'job_id': str(job['id']), 'canonical_status': job['status'], 'composition': group,
                             'freshness_status': state, 'reasons': why})
@@ -188,6 +198,7 @@ def generate_report(jobs, sources, runs, now, native_hours=72):
         'source_rows': {'total': len(sources), 'active': sum(s['is_active'] for s in sources), 'inactive': sum(not s['is_active'] for s in sources)},
         'sources': family, 'active_age_by_composition': dict(sorted(age.items())), 'active_age_totals': totals,
         'direct_verification': complete_sources, 'derived_status_counts': {k: classes[k] for k in ('VERIFIED_ACTIVE', 'CONFIRMED_INACTIVE', 'NEEDS_VERIFICATION')},
+        'scope_health': {'lever_direct': scope_health_report(runs, now, policy)},
         'derived_subreason_counts_overlapping': dict(sorted(reasons.items())),
         'lifecycle': {'last_7d_runs': recent_lifecycle,
             'deactivated_last_7d': sum(r['deactivated'] for r in recent_lifecycle),
@@ -243,6 +254,8 @@ def markdown(report):
         'Subreasons (overlapping):', '```json', json.dumps(report['derived_subreason_counts_overlapping'], indent=2), '```', '',
         '## Native authoritative completeness', '', '```json', json.dumps(report['direct_verification'], indent=2), '```', '',
         'Bounded complete scopes are not full-population verification. Filtered/partial heavy scopes remain unproven.', '',
+        '## Lever scope health and coverage gaps', '', '```json', json.dumps(report.get('scope_health', {}), indent=2, default=str), '```', '',
+        'Reviewed gaps are not complete inventories. Availability probes never refresh native verification; expired reviews and unexpected failures require operator action.', '',
         '## Lifecycle', '', '```json', json.dumps(report['lifecycle'], indent=2), '```', '',
         'Canonical closure-event counts are unknown for legacy runs without transition metrics; current closed-with-absence counts are not historical event counts.',
         'Legacy run finished_at may predate actual completion because of PostgreSQL now(); use new runner monotonic summaries for duration.', '']

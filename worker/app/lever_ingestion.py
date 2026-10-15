@@ -12,13 +12,14 @@ from psycopg.types.json import Jsonb
 
 from app.adapters.lever import (
     API_HOSTS, LeverAdapter, LeverIdentity, normalize_posting_id,
-    normalize_site, parse_lever_url, source_job_id,
+    normalize_site, native_site_slug, parse_lever_url, source_job_id,
 )
 from app.canonical import update_canonical_job
 from app.lifecycle import LifecycleRun, InventoryCompletion
 from app.operation_budget import commit_inventory
 from app.ingestion import get_or_create_company
 from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
+from app.lever_scope_health import load_policy, scope_decision, probe_scope, failure_health
 
 
 SOURCE_NAME = "lever_direct"
@@ -35,6 +36,8 @@ class LeverSite:
     instance: str
     site: str
     company: str
+    api_site: str | None = None
+    ambiguous_native_case: bool = False
 
 
 # Match the observed upstream marker ('lever.co') as well as native URL hosts.
@@ -69,16 +72,25 @@ def fantastic_lever_rows(cur, posting_id: str | None = None):
 
 def discover_sites(cur) -> list[LeverSite]:
     companies = {}
+    native_slugs = {}
     for _, company, *urls in fantastic_lever_rows(cur):
         scopes = {(identity.instance, identity.site) for value in urls
                   if (identity := parse_lever_url(value)) is not None}
         if len(scopes) == 1:
             scope = next(iter(scopes))
+            native_slugs.setdefault(scope, set()).update(
+                native_site_slug(url) for url in urls if parse_lever_url(url) is not None)
             companies.setdefault(scope, set())
             if company:
                 companies[scope].add(company)
-    return [LeverSite(instance, site, next(iter(names)) if len(names) == 1 else site)
-            for (instance, site), names in sorted(companies.items())]
+    result = []
+    for (instance, site), names in sorted(companies.items()):
+        slugs = native_slugs[(instance, site)]
+        # Ambiguous case evidence must not select another tenant implicitly.
+        api_site = next(iter(slugs)) if len(slugs) == 1 else None
+        result.append(LeverSite(instance, site, next(iter(names)) if len(names) == 1 else site,
+                               api_site if api_site != site else None, len(slugs) != 1))
+    return result
 
 
 def select_sites(discovered: list[LeverSite], site: str | None,
@@ -86,6 +98,7 @@ def select_sites(discovered: list[LeverSite], site: str | None,
     if instance is not None and instance not in API_HOSTS:
         raise ValueError("Invalid Lever instance")
     if site is not None:
+        api_site = site.strip()
         site = normalize_site(site)
         selected = [item for item in discovered if item.site == site
                     and (instance is None or item.instance == instance)]
@@ -94,7 +107,7 @@ def select_sites(discovered: list[LeverSite], site: str | None,
         if not selected:
             if instance is None:
                 raise ValueError("Specify global or eu for an undiscovered Lever site")
-            selected = [LeverSite(instance, site, site)]
+            selected = [LeverSite(instance, site, site, api_site if api_site != site else None)]
     else:
         selected = [item for item in discovered if instance is None or item.instance == instance]
     if max_sites is not None:
@@ -216,9 +229,16 @@ def salary_text(job: dict[str, Any]) -> str | None:
 def ingest_lever_jobs(site: str | None = None, instance: str | None = None,
                       max_sites: int | None = None) -> dict[str, Any]:
     adapter = LeverAdapter()
+    policy = load_policy()  # Fail closed before any operational INSERT.
     with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
         with conn.cursor() as cur:
             sites = select_sites(discover_sites(cur), site, instance, max_sites)
+            health_history = []
+            if any(any(row['scope'] == [s.instance, s.site] for row in policy) for s in sites):
+                cur.execute("""select metadata->'scope_health' from public.ingestion_runs
+                    where source_name = %s and metadata ? 'scope_health'
+                    order by started_at desc limit 100""", (SOURCE_NAME,))
+                health_history = [item for (items,) in cur.fetchall() for item in (items or [])]
             cur.execute("""insert into public.ingestion_runs (source_name, status, metadata)
                 values (%s, 'running', %s) returning id""",
                 (SOURCE_NAME, Jsonb({"site": site, "instance": instance, "site_count": len(sites)})))
@@ -227,14 +247,36 @@ def ingest_lever_jobs(site: str | None = None, instance: str | None = None,
             fetched = czech_jobs = created = attached = updated = failed = successful_sites = 0
             site_errors = []
             site_results = []
+            scope_health = []
             try:
                 lifecycle = LifecycleRun(cur, SOURCE_NAME, run_id)
                 for tenant in sites:
                     inventory = lifecycle.scope(tenant.instance, tenant.site)
+                    scope = [tenant.instance, tenant.site]
+                    decision = scope_decision(scope, health_history, datetime.now(timezone.utc), policy)
+                    if tenant.ambiguous_native_case:
+                        health = {'scope': scope, 'state': 'NEEDS_REVIEW', 'action': 'skip',
+                                  'coverage_gap': True, 'expected_gap': False, 'reviewed': False,
+                                  'alert_worthy': True, 'reason': 'Conflicting native site-case evidence'}
+                    elif decision is not None:
+                        health = probe_scope(decision, adapter, tenant.api_site or tenant.site,
+                                             tenant.instance, datetime.now(timezone.utc))
+                    else:
+                        health = None
+                    if health is not None:
+                        scope_health.append(health)
+                        inventory.finish(InventoryCompletion(False, False, health['reason']))
+                        if health['alert_worthy']:
+                            site_errors.append({'instance': tenant.instance, 'site': tenant.site,
+                                                'error': health['reason']})
+                        site_results.append({'instance': tenant.instance, 'site': tenant.site,
+                                             'inventory_skipped': True, 'fetched': 0, 'czech_jobs': 0})
+                        continue
                     try:
-                        jobs = adapter.list_postings(tenant.site, instance=tenant.instance)
+                        jobs = adapter.list_postings(tenant.api_site or tenant.site, instance=tenant.instance)
                     except Exception as exc:
                         site_errors.append({"instance": tenant.instance, "site": tenant.site, "error": str(exc)})
+                        scope_health.append(failure_health(scope, exc))
                         inventory.finish(InventoryCompletion(False, False, "listing request failed"))
                         continue
                     fetched += len(jobs)
@@ -310,6 +352,10 @@ def ingest_lever_jobs(site: str | None = None, instance: str | None = None,
                     complete = failed == before[3] and all(pid is not None for pid in valid_ids)
                     inventory.finish(InventoryCompletion(True, complete,
                         "complete native site inventory" if complete else "partial native records"))
+                    scope_health.append({'scope': scope, 'state': 'HEALTHY' if complete else 'NEEDS_REVIEW',
+                                         'action': 'inventory', 'coverage_gap': not complete,
+                                         'reviewed': False, 'expected_gap': False,
+                                         'alert_worthy': not complete})
                     delta = [value - previous for value, previous in zip((created, attached, updated, failed), before)]
                     if not selected or sum(delta[:3]) > 0:
                         successful_sites += 1
@@ -319,10 +365,13 @@ def ingest_lever_jobs(site: str | None = None, instance: str | None = None,
                     site_results.append({"instance": tenant.instance, "site": tenant.site,
                         "fetched": len(jobs), "czech_jobs": len(selected),
                         **dict(zip(("created", "attached", "updated", "failed"), delta))})
-                status = direct_run_status(len(sites), successful_sites)
+                expected_gaps = sum(h.get('expected_gap') is True for h in scope_health)
+                coverage_degraded = any(h['coverage_gap'] for h in scope_health)
+                status = direct_run_status(len(sites) - expected_gaps, successful_sites)
                 metadata = {"lifecycle": lifecycle.summary(), "site": site, "instance": instance, "site_count": len(sites),
                     "czech_jobs": czech_jobs, "attached": attached, "successful_sites": successful_sites,
-                    "site_errors": site_errors, "site_results": site_results}
+                    "site_errors": site_errors, "site_results": site_results,
+                    "scope_health": scope_health, "coverage_degraded": coverage_degraded}
                 cur.execute("""update public.ingestion_runs set finished_at = clock_timestamp(), status = %s,
                     error_message = %s, records_fetched = %s, records_created = %s,
                     records_updated = %s, records_failed = %s, metadata = %s where id = %s""",
@@ -332,7 +381,8 @@ def ingest_lever_jobs(site: str | None = None, instance: str | None = None,
                 return {"lifecycle": lifecycle.summary(), "status": status, "run_id": str(run_id), "sites": len(sites),
                     "fetched": fetched, "czech_jobs": czech_jobs, "created": created,
                     "attached": attached, "updated": updated, "failed": failed,
-                    "successful_sites": successful_sites, "site_errors": site_errors, "site_results": site_results}
+                    "successful_sites": successful_sites, "site_errors": site_errors, "site_results": site_results,
+                    "scope_health": scope_health, "coverage_degraded": coverage_degraded}
             except Exception as exc:
                 conn.rollback()
                 with conn.cursor() as error_cur:

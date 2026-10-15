@@ -22,7 +22,7 @@ from app.operation_budget import DeadlineExceeded, ingestion_budget
 LIGHT = ('smartrecruiters_direct', 'greenhouse_direct', 'workable_direct', 'ashby_direct', 'lever_direct')
 HEAVY = ('workday_direct', 'successfactors_direct')
 GROUPS = {'light': LIGHT, 'heavy': HEAVY, 'all': LIGHT + HEAVY}
-EXIT_CODES = {'SUCCESS': 0, 'PARTIAL': 2, 'FAILED': 1, 'SKIPPED_LOCKED': 75}
+EXIT_CODES = {'SUCCESS': 0, 'SUCCESS_WITH_KNOWN_GAPS': 0, 'PARTIAL': 2, 'FAILED': 1, 'SKIPPED_LOCKED': 75}
 CONFIG = Path(__file__).parent / 'config' / 'freshness.json'
 LOCK = Path('/tmp/career-os-freshness/runner.lock')
 log = logging.getLogger('career_os.freshness')
@@ -142,6 +142,10 @@ def baseline_from_runs(group, requests, runs):
         if candidates:
             latest = max(candidates, key=lambda r: r['started_at'])
             rows.append({'source_name': source, 'request': wanted, 'ingestion_status': 'success', 'fetched': latest['records_fetched']})
+            known = sorted(h['scope'] for h in (latest.get('metadata') or {}).get('scope_health', [])
+                           if h.get('expected_gap') is True)
+            if known:
+                rows[-1]['known_gap_scopes'] = known
     return {'schema_version': 'freshness-run-v1', 'runner_type': group, 'sources': rows}
 
 
@@ -174,7 +178,7 @@ def count(result, key, default=None):
     return v
 
 
-def normalize_outcome(source, result, previous=None, collapse_ratio=0.2):
+def normalize_outcome(source, result, previous=None, collapse_ratio=0.2, now=None):
     if not isinstance(result, dict) or result.get('status') not in {'success', 'failed'} or not result.get('run_id'):
         raise ValueError('Malformed ingestion outcome')
     requested_key = 'tenants' if source in (LIGHT[0], LIGHT[2]) else 'boards' if source in (LIGHT[1], LIGHT[3]) else 'sites'
@@ -187,6 +191,16 @@ def normalize_outcome(source, result, previous=None, collapse_ratio=0.2):
         raise ValueError('Invalid lifecycle scope diagnostics')
     if any(s['complete'] and not s['successful'] or count(s, 'deactivated', 0) and not s['complete'] for s in scopes):
         raise ValueError('Unsafe/inconsistent lifecycle outcome')
+    health = result.get('scope_health', [])
+    if not isinstance(health, list) or any(not isinstance(h, dict) for h in health):
+        raise ValueError('Invalid scope-health diagnostics')
+    if len({tuple(h.get('scope', [])) for h in health}) != len(health):
+        raise ValueError('Duplicate scope-health diagnostics')
+    gaps = []
+    if source == 'lever_direct':
+        from app.lever_scope_health import accepted_gaps
+        gaps = accepted_gaps(health, scopes, now=now)
+    gap_scopes = sorted(g['scope'] for g in gaps)
     errors = []
     for key in ('tenant_errors', 'board_errors', 'site_errors'):
         for error in result.get(key, []):
@@ -209,29 +223,40 @@ def normalize_outcome(source, result, previous=None, collapse_ratio=0.2):
         'deactivated': deactivated, 'reactivated': reactivated,
         'canonical_closed': lifecycle.get('canonical_closed'),
         'failed_records': failed_records, 'errors': errors, 'anomalies': [], 'timeout': False}
+    out.update(scope_health=health, known_gaps=gaps, known_gap_scopes=gap_scopes,
+               scopes_known_gaps=len(gaps), scopes_unexpected_uncomplete=requested - complete - len(gaps),
+               coverage_degraded=complete != requested,
+               volume_comparison='unavailable')
     if requested == 0:
         out['anomalies'].append('no_scopes_requested')
-    if not complete:
+    if not complete and requested != len(gaps):
         out['anomalies'].append('no_authoritative_complete_scopes')
-    if previous and previous.get('fetched', 0) > 0:
+    comparable = previous and previous.get('known_gap_scopes', []) == gap_scopes
+    if previous and not comparable:
+        out['volume_comparison'] = 'not_comparable_coverage_changed'
+    if comparable and previous.get('fetched', 0) > 0:
+        out['volume_comparison'] = 'comparable'
         if out['fetched'] == 0:
             out['anomalies'].append('previously_nonempty_source_now_zero')
         elif out['fetched'] < previous['fetched'] * collapse_ratio:
             out['anomalies'].append('unexpected_result_collapse')
-    if result['status'] == 'failed' or requested and not successful:
+    if result['status'] == 'failed' or requested and not successful and requested != len(gaps):
         out['status'] = 'FAILED'
-    elif complete != requested or errors or failed_records or out['anomalies']:
+    elif complete + len(gaps) != requested or errors or failed_records or out['anomalies'] or any(h.get('alert_worthy') for h in health):
         out['status'] = 'PARTIAL'
+    elif gaps:
+        out['status'] = 'SUCCESS_WITH_KNOWN_GAPS'
     else:
         out['status'] = 'SUCCESS'
+    out['alert_worthy'] = out['status'] in {'PARTIAL', 'FAILED'}
     return out
 
 
 def aggregate_status(sources):
     statuses = [s['status'] for s in sources]
-    if statuses and all(s == 'SUCCESS' for s in statuses):
-        return 'SUCCESS'
-    return 'PARTIAL' if any(s in {'SUCCESS', 'PARTIAL'} for s in statuses) else 'FAILED'
+    if statuses and all(s in {'SUCCESS', 'SUCCESS_WITH_KNOWN_GAPS'} for s in statuses):
+        return 'SUCCESS_WITH_KNOWN_GAPS' if 'SUCCESS_WITH_KNOWN_GAPS' in statuses else 'SUCCESS'
+    return 'PARTIAL' if any(s in {'SUCCESS', 'SUCCESS_WITH_KNOWN_GAPS', 'PARTIAL'} for s in statuses) else 'FAILED'
 
 
 def next_baseline(previous, result):
@@ -240,11 +265,13 @@ def next_baseline(previous, result):
             for r in (previous or {}).get('sources', [])}
     for r in result.get('sources', []):
         if (r.get('ingestion_status') == 'success' and r.get('scopes_completed', 0) > 0
-                and r['scopes_completed'] == r.get('scopes_attempted') and not r.get('errors')
+                and r['scopes_completed'] + r.get('scopes_known_gaps', 0) == r.get('scopes_attempted') and not r.get('errors')
                 and not r.get('failed_records') and not r.get('timeout')
                 and not set(r.get('anomalies', [])) - {'no_authoritative_complete_scopes'}):
             key = r['source_name'], json.dumps(r.get('request', {}), sort_keys=True)
             rows[key] = {k: r[k] for k in ('source_name', 'request', 'ingestion_status', 'fetched')}
+            if r.get('known_gap_scopes'):
+                rows[key]['known_gap_scopes'] = r['known_gap_scopes']
     return {'schema_version': 'freshness-run-v1', 'runner_type': result['runner_type'],
             'sources': [rows[k] for k in sorted(rows)]}
 
@@ -289,7 +316,7 @@ def run_group(group, config, requests=None, only_source=None, previous=None, exe
                         native = execute(source, validated[source])
                     old = next((s for s in (previous or {}).get('sources', []) if s.get('source_name') == source
                                 and s.get('ingestion_status') == 'success' and s.get('request') == validated[source]), None)
-                    item = normalize_outcome(source, native, old, config['collapse_ratio'])
+                    item = normalize_outcome(source, native, old, config['collapse_ratio'], now=now())
                     if clock() >= budget.deadline:
                         item['timeout'] = True
                         item['anomalies'].append('deadline_exceeded_after_normal_return')
@@ -305,6 +332,7 @@ def run_group(group, config, requests=None, only_source=None, previous=None, exe
                         'scopes_failed', 'scopes_incomplete', 'fetched', 'created', 'updated', 'attached',
                         'deactivated', 'reactivated', 'canonical_closed')})
                 item.update(request=validated[source], started_at=source_start, finished_at=now().isoformat(), duration_seconds=round(clock() - before, 3))
+                item['alert_worthy'] = item['status'] in {'PARTIAL', 'FAILED'}
                 result['timeout'] |= item['timeout']
                 result['sources'].append(item)
                 log.info('source finished source=%s status=%s seconds=%s', source, item['status'], item['duration_seconds'])
@@ -319,8 +347,10 @@ def run_group(group, config, requests=None, only_source=None, previous=None, exe
     result['duration_seconds'] = round(clock() - start, 3)
     if result['duration_seconds'] > config['groups'][group]['expected_seconds']:
         result['anomalies'].append('duration_exceeded_expected_budget')
-        if result['status'] == 'SUCCESS':
+        if result['status'] in {'SUCCESS', 'SUCCESS_WITH_KNOWN_GAPS'}:
             result['status'] = 'PARTIAL'
+    result['coverage_degraded'] = any(s.get('coverage_degraded') or s['status'] in {'PARTIAL', 'FAILED'} for s in result['sources'])
+    result['alert_worthy'] = result['status'] in {'PARTIAL', 'FAILED'} or bool(result['anomalies'])
     result['exit_code'] = EXIT_CODES[result['status']]
     return result
 

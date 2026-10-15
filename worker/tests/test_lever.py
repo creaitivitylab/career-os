@@ -207,7 +207,7 @@ class LeverAdapterTests(baseline.OfflineTest):
             with self.subTest(instance=instance):
                 client = self.request_pages([(200, [payload(instance=instance)])])
                 self.assertEqual(len(LeverAdapter().list_postings("ACME", instance)), 1)
-                self.assertEqual(client.get.call_args.args[0], f"https://{host}/v0/postings/acme")
+                self.assertEqual(client.get.call_args.args[0], f"https://{host}/v0/postings/ACME")
                 self.assertEqual(client.get.call_args.kwargs["params"], {"mode": "json", "limit": 100, "skip": 0})
 
     def test_pagination_loads_all_pages(self):

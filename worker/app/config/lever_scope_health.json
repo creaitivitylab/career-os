@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "scopes": [
+    {
+      "source_name": "lever_direct",
+      "scope": ["global", "jobgether"],
+      "state": "NEEDS_REVIEW",
+      "reason": "Public offset listings overlap across pages; complete traversal is not proven. Preserve historical rows; no authoritative reconciliation.",
+      "reviewed_at": "2026-10-15T08:45:00+00:00",
+      "review_expires_at": "2026-11-14T08:45:00+00:00",
+      "recheck_hours": 168,
+      "notes": "2026-10-15 bounded diagnostic: 100-record skip=2400 page repeated a previously seen native ID. A one-record availability probe cannot clear this review state."
+    }
+  ]
+}

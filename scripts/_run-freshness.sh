@@ -45,6 +45,13 @@ if result['status'] != 'SKIPPED_LOCKED':
     target = baseline.with_name(baseline.name + '.' + str(os.getpid()) + '.tmp')
     target.write_text(json.dumps(next_baseline(previous, result), indent=2) + '\n')
     target.replace(baseline)
-print(json.dumps({'status': result['status'], 'duration_seconds': result['duration_seconds'], 'summary': str(path)}))
+if result.get('alert_worthy', result['status'] in ('PARTIAL', 'FAILED')):
+    print('ALERT: freshness execution requires operator review; inspect ' + str(path), file=sys.stderr)
+elif result.get('coverage_degraded'):
+    print('COVERAGE GAP: reviewed scopes remain unverified; inspect ' + str(path), file=sys.stderr)
+print(json.dumps({'status': result['status'], 'duration_seconds': result['duration_seconds'],
+    'coverage_degraded': result.get('coverage_degraded', False),
+    'alert_worthy': result.get('alert_worthy', result['status'] in ('PARTIAL', 'FAILED')),
+    'summary': str(path)}))
 PY
 exit "$STATUS"

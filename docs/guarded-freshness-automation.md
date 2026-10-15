@@ -122,7 +122,10 @@ monotonic summary duration includes commit and is the actual runtime measurement
 
 ## Outcomes, anomalies and logs
 
-Exit0 SUCCESS; exit2 PARTIAL; exit1 FAILED; exit75 SKIPPED_LOCKED. Invalid CLI
+Exit0 SUCCESS or explicit SUCCESS_WITH_KNOWN_GAPS; exit2 PARTIAL; exit1 FAILED;
+exit75 SKIPPED_LOCKED. Reviewed gaps remain degraded coverage, never complete
+inventories. See [Lever scope health](lever-scope-health.md) for review expiry,
+probe cadence, alerts and activation acceptance. Invalid CLI
 arguments may use the usual argparse usage exit2; distinguish via JSON/logs.
 Source execution is sequential. An isolated rolled-back failure can allow other
 sources; the group still fails/returns partial. Group deadline exhaustion records
