@@ -167,6 +167,8 @@ On exit75: inspect owner age/active process; do not delete the lock or blindly
 retry. On other nonzero outcomes: inspect per-source errors and scope completeness,
 then persisted ingestion_runs and source evidence. Confirm execution ended before
 any separately approved bounded retry. No automatic whole-source retries occur.
+LIGHT read-only scope acquisition permits at most one classified transient retry;
+see [retry boundaries, budgets and metrics](light-transient-resilience.md).
 
 ## Read-only freshness reporting
 

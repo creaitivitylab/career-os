@@ -1,4 +1,5 @@
 from app.operation_budget import check_deadline
+from app.transient_retry import UpstreamHTTPError
 from typing import Any
 
 import httpx
@@ -35,11 +36,7 @@ class WorkableAdapter:
             )
 
         if response.status_code >= 400:
-            raise RuntimeError(
-                "Workable account error "
-                f"{response.status_code}: "
-                f"{response.text[:500]}"
-            )
+            raise UpstreamHTTPError(response.status_code, 'Workable account', response.headers.get('Retry-After'))
 
         data = response.json()
 

@@ -13,6 +13,7 @@ from psycopg.types.json import Jsonb
 from app.canonical import update_canonical_job
 from app.lifecycle import LifecycleRun, InventoryCompletion
 from app.operation_budget import commit_inventory
+from app.transient_retry import InventoryAcquisition, retryable
 from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
 
 from app.adapters.greenhouse import GreenhouseAdapter
@@ -293,24 +294,39 @@ def ingest_greenhouse_jobs(
             try:
 
                 lifecycle = LifecycleRun(cur, SOURCE_NAME, run_id)
+                acquisition = InventoryAcquisition(SOURCE_NAME)
 
                 for board in boards:
-                    inventory = lifecycle.scope(board)
                     failed_before = failed
 
+                    def fetch_inventory():
+                        jobs = adapter.list_jobs(board)
+                        details = {}
+                        for summary in jobs:
+                            posting_id = summary.get('id')
+                            if posting_id is None or not is_czech_job(summary):
+                                continue
+                            try:
+                                details[str(posting_id)] = adapter.get_job(board, str(posting_id))
+                            except Exception as exc:
+                                if acquisition.enabled and retryable(exc):
+                                    raise
+                                details[str(posting_id)] = None
+                        return jobs, details
+
                     try:
-                        jobs = adapter.list_jobs(
-                            board
-                        )
+                        jobs, posting_details = acquisition.run((board,), fetch_inventory)
 
                     except Exception as exc:
                         board_errors.append({
                             "board": board,
                             "error": str(exc),
                         })
-                        inventory.finish(InventoryCompletion(False, False, "listing request failed"))
+                        inventory = lifecycle.scope(board)
+                        acquisition.finish(inventory, InventoryCompletion(False, False, "native acquisition failed"))
                         continue
 
+                    inventory = lifecycle.scope(board)
                     details_before = details_loaded
                     fetched += len(jobs)
 
@@ -336,19 +352,11 @@ def ingest_greenhouse_jobs(
                             posting_id
                         )
 
-                        try:
-                            raw_job = (
-                                adapter.get_job(
-                                    board,
-                                    posting_id,
-                                )
-                            )
-
-                            details_loaded += 1
-
-                        except Exception:
+                        raw_job = posting_details[posting_id]
+                        if raw_job is None:
                             failed += 1
                             continue
+                        details_loaded += 1
 
                         if not is_czech_job(
                             raw_job
@@ -633,7 +641,7 @@ def ingest_greenhouse_jobs(
                         if native_identity is not None:
                             inventory.observe(native_identity)
                     complete = failed == failed_before and all(i is not None for i in observed_ids)
-                    inventory.finish(InventoryCompletion(True, complete,
+                    acquisition.finish(inventory, InventoryCompletion(True, complete,
                         "complete native inventory" if complete else "partial records or unsupported inventory filter"))
 
                     if not czech_jobs or details_loaded > details_before:
@@ -678,6 +686,7 @@ def ingest_greenhouse_jobs(
                                 details_loaded,
                             "successful_tenants": successful_tenants,
                             "lifecycle": lifecycle.summary(),
+                            **acquisition.summary(),
                             "attached":
                                 attached,
                             "failed":
@@ -693,6 +702,7 @@ def ingest_greenhouse_jobs(
 
                 return {
                     "lifecycle": lifecycle.summary(),
+                    **acquisition.summary(),
                     "status": run_status,
                     "run_id": str(run_id),
                     "boards": len(boards),

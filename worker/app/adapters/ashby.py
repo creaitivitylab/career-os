@@ -1,4 +1,5 @@
 from app.operation_budget import check_deadline
+from app.transient_retry import UpstreamHTTPError
 from typing import Any
 
 import httpx
@@ -39,11 +40,7 @@ class AshbyAdapter:
             )
 
         if response.status_code >= 400:
-            raise RuntimeError(
-                "Ashby board error "
-                f"{response.status_code}: "
-                f"{response.text[:500]}"
-            )
+            raise UpstreamHTTPError(response.status_code, 'Ashby board', response.headers.get('Retry-After'))
 
         data = response.json()
 

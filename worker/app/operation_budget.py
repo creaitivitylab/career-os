@@ -39,6 +39,12 @@ def check_deadline():
         raise DeadlineExceeded("Cooperative ingestion deadline exceeded; rollback required")
 
 
+def remaining_seconds():
+    """Remaining shared source/group budget, or None outside guarded execution."""
+    budget = _budget.get()
+    return max(0, budget.deadline - budget.clock()) if budget is not None else None
+
+
 def commit_inventory(conn):
     check_deadline()
     budget = _budget.get()

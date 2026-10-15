@@ -12,6 +12,7 @@ from psycopg.types.json import Jsonb
 from app.canonical import update_canonical_job
 from app.lifecycle import LifecycleRun, InventoryCompletion
 from app.operation_budget import commit_inventory
+from app.transient_retry import InventoryAcquisition, retryable
 from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
 
 from app.adapters.smartrecruiters import (
@@ -289,19 +290,28 @@ def ingest_smartrecruiters_jobs(
             try:
 
                 lifecycle = LifecycleRun(cur, SOURCE_NAME, run_id)
+                acquisition = InventoryAcquisition(SOURCE_NAME)
 
                 for tenant in tenants:
-                    inventory = lifecycle.scope(tenant)
                     failed_before = failed
 
-                    try:
+                    def fetch_inventory():
+                        postings = adapter.list_postings(tenant, country=country)
+                        details = {}
+                        for posting in postings:
+                            posting_id = posting.get('id')
+                            if not posting_id:
+                                continue
+                            try:
+                                details[str(posting_id)] = adapter.get_posting(tenant, str(posting_id))
+                            except Exception as exc:
+                                if acquisition.enabled and retryable(exc):
+                                    raise
+                                details[str(posting_id)] = None
+                        return postings, details
 
-                        postings = (
-                            adapter.list_postings(
-                                tenant,
-                                country=country,
-                            )
-                        )
+                    try:
+                        postings, posting_details = acquisition.run((tenant,), fetch_inventory)
 
                     except Exception as exc:
 
@@ -310,9 +320,11 @@ def ingest_smartrecruiters_jobs(
                             "error": str(exc),
                         })
 
-                        inventory.finish(InventoryCompletion(False, False, "listing request failed"))
+                        inventory = lifecycle.scope(tenant)
+                        acquisition.finish(inventory, InventoryCompletion(False, False, "native acquisition failed"))
                         continue
 
+                    inventory = lifecycle.scope(tenant)
                     processed_before = created + attached + updated
                     fetched += len(postings)
 
@@ -324,20 +336,11 @@ def ingest_smartrecruiters_jobs(
                             failed += 1
                             continue
 
-                        try:
-
-                            raw_job = (
-                                adapter.get_posting(
-                                    tenant,
-                                    str(posting_id),
-                                )
-                            )
-
-                            details_loaded += 1
-
-                        except Exception:
+                        raw_job = posting_details[str(posting_id)]
+                        if raw_job is None:
                             failed += 1
                             continue
+                        details_loaded += 1
 
                         source_job_id = (
                             f"{tenant}:"
@@ -637,7 +640,7 @@ def ingest_smartrecruiters_jobs(
                         if native_identity is not None:
                             inventory.observe(native_identity)
                     complete = failed == failed_before and all(i is not None for i in observed_ids) and country.casefold() == "cz"
-                    inventory.finish(InventoryCompletion(True, complete,
+                    acquisition.finish(inventory, InventoryCompletion(True, complete,
                         "complete native inventory" if complete else "partial records or unsupported inventory filter"))
 
                     if not postings or created + attached + updated > processed_before:
@@ -681,6 +684,7 @@ def ingest_smartrecruiters_jobs(
                                 details_loaded,
                             "successful_tenants": successful_tenants,
                             "lifecycle": lifecycle.summary(),
+                            **acquisition.summary(),
                             "attached":
                                 attached,
                             "failed":
@@ -696,6 +700,7 @@ def ingest_smartrecruiters_jobs(
 
                 return {
                     "lifecycle": lifecycle.summary(),
+                    **acquisition.summary(),
                     "status": run_status,
                     "run_id": str(run_id),
                     "tenants": len(tenants),

@@ -18,6 +18,8 @@ import time
 import uuid
 
 from app.operation_budget import DeadlineExceeded, ingestion_budget
+from app.transient_retry import (METRICS, acquisition_summary, transient_retry_policy,
+                                 validate_policy)
 
 LIGHT = ('smartrecruiters_direct', 'greenhouse_direct', 'workable_direct', 'ashby_direct', 'lever_direct')
 HEAVY = ('workday_direct', 'successfactors_direct')
@@ -49,6 +51,7 @@ def load_config(path=CONFIG):
     if not 0 < c['collapse_ratio'] < 1:
         raise ValueError('Invalid collapse ratio')
     positive_number(c['busy_warning_seconds'])
+    validate_policy(c)
     return c
 
 
@@ -227,6 +230,8 @@ def normalize_outcome(source, result, previous=None, collapse_ratio=0.2, now=Non
                scopes_known_gaps=len(gaps), scopes_unexpected_uncomplete=requested - complete - len(gaps),
                coverage_degraded=complete != requested,
                volume_comparison='unavailable')
+    out.update(scope_attempts=result.get('scope_attempts', []),
+               retry_metrics=result.get('retry_metrics', dict.fromkeys(METRICS, 0)))
     if requested == 0:
         out['anomalies'].append('no_scopes_requested')
     if not complete and requested != len(gaps):
@@ -310,9 +315,13 @@ def run_group(group, config, requests=None, only_source=None, previous=None, exe
                 before = clock()
                 source_start = now().isoformat()
                 budget = None
+                acquisitions = []
                 log.info('source started source=%s group=%s', source, group)
                 try:
-                    with ingestion_budget(min(end, before + config['source_deadlines_seconds'][source]), clock) as budget:
+                    with (
+                        ingestion_budget(min(end, before + config['source_deadlines_seconds'][source]), clock) as budget,
+                        transient_retry_policy(config if source in LIGHT else None) as acquisitions,
+                    ):
                         native = execute(source, validated[source])
                     old = next((s for s in (previous or {}).get('sources', []) if s.get('source_name') == source
                                 and s.get('ingestion_status') == 'success' and s.get('request') == validated[source]), None)
@@ -332,6 +341,8 @@ def run_group(group, config, requests=None, only_source=None, previous=None, exe
                         'scopes_failed', 'scopes_incomplete', 'fetched', 'created', 'updated', 'attached',
                         'deactivated', 'reactivated', 'canonical_closed')})
                 item.update(request=validated[source], started_at=source_start, finished_at=now().isoformat(), duration_seconds=round(clock() - before, 3))
+                if acquisitions:
+                    item.update(acquisition_summary(acquisitions, aborted=item['status'] == 'FAILED'))
                 item['alert_worthy'] = item['status'] in {'PARTIAL', 'FAILED'}
                 result['timeout'] |= item['timeout']
                 result['sources'].append(item)
@@ -350,6 +361,8 @@ def run_group(group, config, requests=None, only_source=None, previous=None, exe
         if result['status'] in {'SUCCESS', 'SUCCESS_WITH_KNOWN_GAPS'}:
             result['status'] = 'PARTIAL'
     result['coverage_degraded'] = any(s.get('coverage_degraded') or s['status'] in {'PARTIAL', 'FAILED'} for s in result['sources'])
+    result['retry_metrics'] = {key: sum(s.get('retry_metrics', {}).get(key, 0)
+                                      for s in result['sources']) for key in METRICS}
     result['alert_worthy'] = result['status'] in {'PARTIAL', 'FAILED'} or bool(result['anomalies'])
     result['exit_code'] = EXIT_CODES[result['status']]
     return result

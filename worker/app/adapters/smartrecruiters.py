@@ -1,4 +1,5 @@
 from app.operation_budget import check_deadline
+from app.transient_retry import UpstreamHTTPError
 from typing import Any
 
 import httpx
@@ -49,11 +50,7 @@ class SmartRecruitersAdapter:
                 )
 
                 if response.status_code >= 400:
-                    raise RuntimeError(
-                        "SmartRecruiters list error "
-                        f"{response.status_code}: "
-                        f"{response.text[:500]}"
-                    )
+                    raise UpstreamHTTPError(response.status_code, 'SmartRecruiters list', response.headers.get('Retry-After'))
 
                 data = response.json()
 
@@ -106,11 +103,7 @@ class SmartRecruitersAdapter:
             )
 
         if response.status_code >= 400:
-            raise RuntimeError(
-                "SmartRecruiters detail error "
-                f"{response.status_code}: "
-                f"{response.text[:500]}"
-            )
+            raise UpstreamHTTPError(response.status_code, 'SmartRecruiters detail', response.headers.get('Retry-After'))
 
         data = response.json()
 

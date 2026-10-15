@@ -11,6 +11,7 @@ from psycopg.types.json import Jsonb
 from app.canonical import update_canonical_job
 from app.lifecycle import LifecycleRun, InventoryCompletion
 from app.operation_budget import commit_inventory
+from app.transient_retry import InventoryAcquisition
 from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
 
 from app.adapters.ashby import AshbyAdapter
@@ -531,20 +532,16 @@ def ingest_ashby_jobs(
             try:
 
                 lifecycle = LifecycleRun(cur, SOURCE_NAME, run_id)
+                acquisition = InventoryAcquisition(SOURCE_NAME)
 
                 for (
                     company_name,
                     board,
                 ) in boards:
-                    inventory = lifecycle.scope(board)
                     failed_before = failed
 
                     try:
-                        jobs = (
-                            adapter.list_jobs(
-                                board
-                            )
-                        )
+                        jobs = acquisition.run((board,), lambda: adapter.list_jobs(board))
 
                     except Exception as exc:
 
@@ -557,9 +554,11 @@ def ingest_ashby_jobs(
                                 str(exc),
                         })
 
-                        inventory.finish(InventoryCompletion(False, False, "listing request failed"))
+                        inventory = lifecycle.scope(board)
+                        acquisition.finish(inventory, InventoryCompletion(False, False, "listing request failed"))
                         continue
 
+                    inventory = lifecycle.scope(board)
                     processed_before = created + attached + updated
                     fetched += len(
                         jobs
@@ -896,7 +895,7 @@ def ingest_ashby_jobs(
                         if native_identity is not None:
                             inventory.observe(native_identity)
                     complete = failed == failed_before and all(i is not None for i in observed_ids)
-                    inventory.finish(InventoryCompletion(True, complete,
+                    acquisition.finish(inventory, InventoryCompletion(True, complete,
                         "complete native inventory" if complete else "partial records or unsupported inventory filter"))
 
                     if not selected or created + attached + updated > processed_before:
@@ -941,6 +940,7 @@ def ingest_ashby_jobs(
                                 czech_jobs,
                             "successful_tenants": successful_tenants,
                             "lifecycle": lifecycle.summary(),
+                            **acquisition.summary(),
                             "attached":
                                 attached,
                             "missing_uuid":
@@ -958,6 +958,7 @@ def ingest_ashby_jobs(
 
                 return {
                     "lifecycle": lifecycle.summary(),
+                    **acquisition.summary(),
                     "status":
                         run_status,
 

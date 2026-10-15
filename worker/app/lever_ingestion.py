@@ -17,6 +17,7 @@ from app.adapters.lever import (
 from app.canonical import update_canonical_job
 from app.lifecycle import LifecycleRun, InventoryCompletion
 from app.operation_budget import commit_inventory
+from app.transient_retry import InventoryAcquisition
 from app.ingestion import get_or_create_company
 from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
 from app.lever_scope_health import load_policy, scope_decision, probe_scope, failure_health
@@ -250,8 +251,8 @@ def ingest_lever_jobs(site: str | None = None, instance: str | None = None,
             scope_health = []
             try:
                 lifecycle = LifecycleRun(cur, SOURCE_NAME, run_id)
+                acquisition = InventoryAcquisition(SOURCE_NAME)
                 for tenant in sites:
-                    inventory = lifecycle.scope(tenant.instance, tenant.site)
                     scope = [tenant.instance, tenant.site]
                     decision = scope_decision(scope, health_history, datetime.now(timezone.utc), policy)
                     if tenant.ambiguous_native_case:
@@ -265,7 +266,8 @@ def ingest_lever_jobs(site: str | None = None, instance: str | None = None,
                         health = None
                     if health is not None:
                         scope_health.append(health)
-                        inventory.finish(InventoryCompletion(False, False, health['reason']))
+                        inventory = lifecycle.scope(tenant.instance, tenant.site)
+                        acquisition.finish(inventory, InventoryCompletion(False, False, health['reason']))
                         if health['alert_worthy']:
                             site_errors.append({'instance': tenant.instance, 'site': tenant.site,
                                                 'error': health['reason']})
@@ -273,12 +275,15 @@ def ingest_lever_jobs(site: str | None = None, instance: str | None = None,
                                              'inventory_skipped': True, 'fetched': 0, 'czech_jobs': 0})
                         continue
                     try:
-                        jobs = adapter.list_postings(tenant.api_site or tenant.site, instance=tenant.instance)
+                        jobs = acquisition.run(scope, lambda: adapter.list_postings(
+                            tenant.api_site or tenant.site, instance=tenant.instance))
                     except Exception as exc:
                         site_errors.append({"instance": tenant.instance, "site": tenant.site, "error": str(exc)})
                         scope_health.append(failure_health(scope, exc))
-                        inventory.finish(InventoryCompletion(False, False, "listing request failed"))
+                        inventory = lifecycle.scope(tenant.instance, tenant.site)
+                        acquisition.finish(inventory, InventoryCompletion(False, False, "listing request failed"))
                         continue
+                    inventory = lifecycle.scope(tenant.instance, tenant.site)
                     fetched += len(jobs)
                     selected = [job for job in jobs if is_czech_job(job)]
                     czech_jobs += len(selected)
@@ -350,7 +355,7 @@ def ingest_lever_jobs(site: str | None = None, instance: str | None = None,
                         if pid is not None:
                             inventory.observe(source_job_id(tenant.instance, tenant.site, pid))
                     complete = failed == before[3] and all(pid is not None for pid in valid_ids)
-                    inventory.finish(InventoryCompletion(True, complete,
+                    acquisition.finish(inventory, InventoryCompletion(True, complete,
                         "complete native site inventory" if complete else "partial native records"))
                     scope_health.append({'scope': scope, 'state': 'HEALTHY' if complete else 'NEEDS_REVIEW',
                                          'action': 'inventory', 'coverage_gap': not complete,
@@ -368,7 +373,7 @@ def ingest_lever_jobs(site: str | None = None, instance: str | None = None,
                 expected_gaps = sum(h.get('expected_gap') is True for h in scope_health)
                 coverage_degraded = any(h['coverage_gap'] for h in scope_health)
                 status = direct_run_status(len(sites) - expected_gaps, successful_sites)
-                metadata = {"lifecycle": lifecycle.summary(), "site": site, "instance": instance, "site_count": len(sites),
+                metadata = {"lifecycle": lifecycle.summary(), **acquisition.summary(), "site": site, "instance": instance, "site_count": len(sites),
                     "czech_jobs": czech_jobs, "attached": attached, "successful_sites": successful_sites,
                     "site_errors": site_errors, "site_results": site_results,
                     "scope_health": scope_health, "coverage_degraded": coverage_degraded}
@@ -378,7 +383,7 @@ def ingest_lever_jobs(site: str | None = None, instance: str | None = None,
                     (status, ALL_TENANTS_FAILED if status == "failed" else None, fetched, created,
                      updated + attached, failed, Jsonb(metadata), run_id))
                 commit_inventory(conn)
-                return {"lifecycle": lifecycle.summary(), "status": status, "run_id": str(run_id), "sites": len(sites),
+                return {"lifecycle": lifecycle.summary(), **acquisition.summary(), "status": status, "run_id": str(run_id), "sites": len(sites),
                     "fetched": fetched, "czech_jobs": czech_jobs, "created": created,
                     "attached": attached, "updated": updated, "failed": failed,
                     "successful_sites": successful_sites, "site_errors": site_errors, "site_results": site_results,

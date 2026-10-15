@@ -12,6 +12,7 @@ from psycopg.types.json import Jsonb
 from app.canonical import update_canonical_job
 from app.lifecycle import LifecycleRun, InventoryCompletion
 from app.operation_budget import commit_inventory
+from app.transient_retry import InventoryAcquisition
 from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
 
 from app.adapters.workable import WorkableAdapter
@@ -587,20 +588,16 @@ def ingest_workable_jobs(
             try:
 
                 lifecycle = LifecycleRun(cur, SOURCE_NAME, run_id)
+                acquisition = InventoryAcquisition(SOURCE_NAME)
 
                 for (
                     company_name,
                     slug,
                 ) in tenants:
-                    inventory = lifecycle.scope(slug)
                     failed_before = failed
 
                     try:
-                        account = (
-                            adapter.get_account(
-                                slug
-                            )
-                        )
+                        account = acquisition.run((slug,), lambda: adapter.get_account(slug))
 
                     except Exception as exc:
 
@@ -613,9 +610,11 @@ def ingest_workable_jobs(
                                 str(exc),
                         })
 
-                        inventory.finish(InventoryCompletion(False, False, "listing request failed"))
+                        inventory = lifecycle.scope(slug)
+                        acquisition.finish(inventory, InventoryCompletion(False, False, "listing request failed"))
                         continue
 
+                    inventory = lifecycle.scope(slug)
                     processed_before = created + attached + updated
 
                     jobs = (
@@ -1035,7 +1034,7 @@ def ingest_workable_jobs(
                         if identity is not None:
                             inventory.observe(identity)
                     complete = failed == failed_before and all(i is not None for i in observed_ids)
-                    inventory.finish(InventoryCompletion(True, complete,
+                    acquisition.finish(inventory, InventoryCompletion(True, complete,
                         "complete native account inventory" if complete else "partial native records"))
 
                     if (
@@ -1083,6 +1082,7 @@ def ingest_workable_jobs(
                                 czech_jobs,
                             "successful_tenants": successful_tenants,
                             "lifecycle": lifecycle.summary(),
+                            **acquisition.summary(),
                             "attached":
                                 attached,
                             "ambiguous_exact_matches":
@@ -1100,6 +1100,7 @@ def ingest_workable_jobs(
 
                 return {
                     "lifecycle": lifecycle.summary(),
+                    **acquisition.summary(),
                     "status":
                         run_status,
 

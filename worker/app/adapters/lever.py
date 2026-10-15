@@ -1,4 +1,5 @@
 from app.operation_budget import check_deadline
+from app.transient_retry import UpstreamHTTPError
 import re
 from typing import Any, Literal, NamedTuple
 from urllib.parse import unquote, urlsplit
@@ -19,10 +20,9 @@ class LeverIdentity(NamedTuple):
     posting_id: str | None
 
 
-class LeverHTTPError(RuntimeError):
-    def __init__(self, status_code: int):
-        self.status_code = status_code
-        super().__init__(f"Lever postings error {status_code}")
+class LeverHTTPError(UpstreamHTTPError):
+    def __init__(self, status_code: int, retry_after=None):
+        super().__init__(status_code, 'Lever postings', retry_after)
 
 
 class LeverPaginationError(RuntimeError):
@@ -121,7 +121,7 @@ class LeverAdapter:
                     "mode": "json", "limit": self.PAGE_SIZE, "skip": offset,
                 })
                 if response.status_code >= 400:
-                    raise LeverHTTPError(response.status_code)
+                    raise LeverHTTPError(response.status_code, response.headers.get('Retry-After'))
                 try:
                     data = response.json()
                 except ValueError as exc:
