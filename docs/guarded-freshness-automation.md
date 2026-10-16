@@ -35,7 +35,8 @@ including their existing dedupe flows. They are unchanged by this milestone.
 ## Entry points and explicit execution
 
 Run from any directory using an absolute path. A default invocation prints a
-local plan only and makes no DB/API request or log write:
+plan inside the running worker and makes no DB/API request. It acquires the host
+lock and saves local operational logs/artifacts:
 
 ```bash
 bash /home/careeros/apps/career-os/scripts/run-direct-light.sh
@@ -72,6 +73,13 @@ Unrestricted discovery, unreviewed hosts, `max_sites` RMK shortcuts and false
 validated-scope fallback are rejected. A missing/invalid gate aborts execution.
 
 ## Lock ownership and recovery
+
+Host entrypoints acquire a shared nonblocking `flock` on
+`logs/freshness/runner.lock`, before locating the worker. This covers light,
+heavy and legacy `all`, manual and scheduled calls, including planning and
+atomic host baseline promotion. Contention prints `SKIPPED_LOCKED` JSON and
+returns75 without invoking the worker. The file is never unlinked; a stale
+file without a live kernel lock is harmless. The descriptor closes on exit.
 
 The runner executes the existing Python ingestion functions **inside the worker**,
 not a timed-out HTTP client. All light/heavy/all invocations use a shared Linux
@@ -154,8 +162,10 @@ ingestion_runs in an enforced read-only transaction, so absence of a new cache
 does not hide a known-positive-to-zero change. This volume comparison is an alarm,
 not proof of scope completeness; legacy metadata can omit past discovery limits.
 
-Scripts write `logs/freshness/<UTC>-<PID>-<group>.json` plus `.log`, and maintain an
-atomic `baseline-<group>.json`. JSON contains attempted source, timing, run ID,
+Scripts write `logs/freshness/runs/<UTC>-<PID>-<group>/command.stdout` and
+`command.log`. `artifacts/result.json` is the full validated run result;
+`artifacts/plan.json` is a plan. They maintain an atomic
+`logs/freshness/baseline-<group>.json`. JSON contains attempted source, timing, run ID,
 scope completeness, fetched/created/updated/attached, deactivated/reactivated,
 errors, anomalies and timeout. `canonical_closed` is null when legacy lifecycle
 results do not provide transition counts; do not infer closures from job.updated_at.
@@ -172,14 +182,18 @@ see [retry boundaries, budgets and metrics](light-transient-resilience.md).
 
 ## Read-only freshness reporting
 
-After code deployment, `bash scripts/freshness-report.sh` writes timestamped JSON
-and Markdown to `logs/freshness/reports/`. It uses a single worker-side report
+`bash scripts/freshness-report.sh` writes timestamped JSON
+and Markdown to `logs/freshness/reports/<UTC>-<PID>/artifacts/`. It uses a single worker-side report
 snapshot and copies its artifacts; no production table writes. The direct module
 also supports:
 
 ```bash
 python -m app.freshness_report --output-dir /tmp/freshness-review --native-hours 72
 ```
+
+That Python command is **inside the worker**, not a host command. See
+[the operational runtime boundary](freshness-operational-runtime.md) for host
+dependencies, artifact recovery and offline integration tests.
 
 Every DB session explicitly enables READ ONLY REPEATABLE READ before queries,
 checks transaction_read_only and uses a local diagnostic statement timeout. The
