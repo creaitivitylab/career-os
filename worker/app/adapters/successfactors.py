@@ -179,7 +179,9 @@ class RMKConfig:
     bounded_recall: bool = False
 
     def metadata(self):
-        return {"tenant": self.tenant, "search_url": self.search_url, "brand": self.brand,
+        from app.rmk_ownership import RMKScopeIdentity
+        owner = RMKScopeIdentity.from_catalog(self.search_url, self.tenant, self.brand)
+        return {"host": owner.host, "tenant": self.tenant, "search_url": self.search_url, "brand": self.brand,
                 "locale": self.locale, "locales": self.locales, "fields": self.fields,
                 "hosts": sorted(self.hosts), "csrf_available": bool(self.csrf),
                 "locale_home_used": self.locale_home_used,

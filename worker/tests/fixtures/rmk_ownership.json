@@ -1,0 +1,47 @@
+{
+  "observed": {
+    "source_job_id": "spravazel:1358021257",
+    "rmk_site": {
+      "brand": "",
+      "hosts": [
+        "kariera.spravazeleznic.cz"
+      ],
+      "fields": [
+        "department"
+      ],
+      "locale": "cs_CZ",
+      "tenant": "spravazel",
+      "locales": [
+        "cs_CZ"
+      ],
+      "search_url": "https://kariera.spravazeleznic.cz/search/",
+      "bounded_recall": true,
+      "csrf_available": true,
+      "locale_home_used": true,
+      "advertised_locales": [
+        "cs_CZ"
+      ]
+    }
+  },
+  "unseen": {
+    "source_job_id": "spravazel:1373191857",
+    "rmk_site": {
+      "brand": "",
+      "hosts": [
+        "kariera.spravazeleznic.cz"
+      ],
+      "fields": [
+        "department"
+      ],
+      "locale": "cs_CZ",
+      "tenant": "spravazel",
+      "locales": [
+        "cs_CZ"
+      ],
+      "search_url": "https://kariera.spravazeleznic.cz/search/",
+      "csrf_available": true,
+      "locale_home_used": false
+    }
+  },
+  "provenance": "Minimal native identity/catalog metadata from read-only 2026-10-19 HEAVY audit; no job/company/personal data."
+}

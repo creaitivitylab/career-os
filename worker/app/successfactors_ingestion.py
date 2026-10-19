@@ -16,6 +16,7 @@ from app.adapters.successfactors import (
 )
 from app.canonical import update_canonical_job
 from app.lifecycle import LifecycleRun, InventoryCompletion
+from app.rmk_ownership import RMKScopeIdentity
 from app.operation_budget import commit_inventory
 from app.ingestion import get_or_create_company
 from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
@@ -220,7 +221,8 @@ def ingest_successfactors_jobs(host=None, brand=None, locale=None, max_sites=Non
                                 apply_scope_gate(config, rule)
                                 result["unapproved_locales"] = sorted(set(config.advertised_locales) - set(config.locales))
                             result["config"] = config.metadata()
-                            inventory = lifecycle.scope(site.host, config.tenant, config.brand)
+                            owner = RMKScopeIdentity.from_catalog(config.search_url, config.tenant, config.brand)
+                            inventory = lifecycle.scope(*owner.key)
                             candidates, modes = adapter.discover_candidates(config)
                             result["discovery"] = modes
                             # Compact audit of historical identities, not a

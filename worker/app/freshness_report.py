@@ -11,6 +11,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from app.direct_freshness import LIGHT, HEAVY
+from app.rmk_ownership import resolve_ownership, ownership_report, reviewed_identity
 
 DIRECT = set(LIGHT + HEAVY)
 WINDOWS = (24, 72, 168, 336, 720)
@@ -46,7 +47,7 @@ def bounded_run(run):
                'site', 'host', 'max_companies', 'max_boards', 'max_sites'))
 
 
-def proven_scope(source, runs, state):
+def proven_scope(source, runs, state, rmk_gate=None):
     """Metadata must prove exact scope ownership, not merely an HTTP success."""
     life = source.get('lifecycle') or {}
     run = runs.get(str(life.get('run_id')))
@@ -65,8 +66,8 @@ def proven_scope(source, runs, state):
         native = source.get('native_scope') or {}
         owned = len(scope) == 3 and [native.get('host'), *tokens[:2]] == scope
     elif name == 'successfactors_direct':
-        native = source.get('native_scope') or {}
-        owned = len(scope) == 3 and [native.get('host'), tokens[0], native.get('brand')] == scope
+        owned = ((run.get('metadata') or {}).get('validated_scopes') is True
+                 and resolve_ownership(source.get('native_scope'), source['source_job_id'], rmk_gate).matches(scope))
     else:
         owned = tokens[:-1] == scope
         if name == 'smartrecruiters_direct':
@@ -75,7 +76,7 @@ def proven_scope(source, runs, state):
     return owned and any(s.get('scope') == scope and s.get('complete') is True and s.get('successful') is True for s in scopes)
 
 
-def classify(job, sources, runs, now, native_hours=72, reviewed_gaps=None):
+def classify(job, sources, runs, now, native_hours=72, reviewed_gaps=None, rmk_gate=None):
     if reviewed_gaps is None:
         from app.lever_scope_health import load_policy
         reviewed_gaps = {tuple(r['scope']) for r in load_policy()}
@@ -84,7 +85,7 @@ def classify(job, sources, runs, now, native_hours=72, reviewed_gaps=None):
         return 'NEEDS_VERIFICATION', ['no_sources']
     direct = [s for s in sources if s['source_name'] in DIRECT]
     active = [s for s in direct if s['is_active']]
-    withdrawn = [s for s in direct if not s['is_active'] and proven_scope(s, runs, 'absent')]
+    withdrawn = [s for s in direct if not s['is_active'] and proven_scope(s, runs, 'absent', rmk_gate)]
     providers = [s for s in sources if s['source_name'] not in DIRECT]
     if len(withdrawn) == len(sources) and job['status'] in {'inactive', 'expired'}:
         return 'CONFIRMED_INACTIVE', ['all_authoritative_sources_confirmed_absent']
@@ -94,7 +95,7 @@ def classify(job, sources, runs, now, native_hours=72, reviewed_gaps=None):
                  and tuple(s['source_job_id'].split(':')[:-1]) in reviewed_gaps]
     if suspended:
         reasons.append('reviewed_native_scope_coverage_gap')
-    verified = [s for s in active if s not in suspended and proven_scope(s, runs, 'observed') and
+    verified = [s for s in active if s not in suspended and proven_scope(s, runs, 'observed', rmk_gate) and
                 dt(s.get('last_seen_at')) is not None and
                 dt(s['last_seen_at']) >= now - timedelta(hours=native_hours) and
                 dt(s.get('last_verified_at')) is not None and
@@ -106,7 +107,7 @@ def classify(job, sources, runs, now, native_hours=72, reviewed_gaps=None):
         reasons.append('discovery_only')
     if active and all(dt(s.get('last_verified_at')) is None or dt(s['last_verified_at']) < now - timedelta(hours=native_hours) for s in active):
         reasons.append('direct_evidence_stale')
-    if active and not any(proven_scope(s, runs, 'observed') for s in active):
+    if active and not any(proven_scope(s, runs, 'observed', rmk_gate) for s in active):
         reasons.append('authoritative_completeness_unproven')
     if expiry and expiry < now:
         reasons.append('expired_timestamp_unconfirmed')
@@ -115,10 +116,13 @@ def classify(job, sources, runs, now, native_hours=72, reviewed_gaps=None):
     return 'NEEDS_VERIFICATION', reasons + ['no_recent_native_verification']
 
 
-def full_complete(run):
+def full_complete(run, rmk_gate=None):
     m = run.get('metadata') or {}
     life = m.get('lifecycle') or {}
     scopes = life.get('scopes') or []
+    if run['source_name'] == 'successfactors_direct':
+        if m.get('validated_scopes') is not True or not all(reviewed_identity(s.get('scope'), rmk_gate) for s in scopes):
+            return False
     requested = next((m[k] for k in ('tenant_count', 'board_count', 'site_count', 'sites') if k in m), None)
     return (run['status'] == 'success' and not bounded_run(run) and requested is not None and requested > 0
             and len(scopes) == requested and all(s.get('successful') is True and s.get('complete') is True for s in scopes))
@@ -126,6 +130,8 @@ def full_complete(run):
 
 def generate_report(jobs, sources, runs, now, native_hours=72):
     from app.lever_scope_health import load_policy, scope_health_report
+    from app.successfactors_scopes import load_scope_gate
+    rmk_gate = load_scope_gate()
     policy = load_policy()
     reviewed_gaps = {tuple(r['scope']) for r in policy}
     now = dt(now)
@@ -143,7 +149,7 @@ def generate_report(jobs, sources, runs, now, native_hours=72):
     for job in sorted(jobs, key=lambda j: str(j['id'])):
         support = by_job[str(job['id'])]
         group = composition(support)
-        state, why = classify(job, support, run_index, now, native_hours, reviewed_gaps)
+        state, why = classify(job, support, run_index, now, native_hours, reviewed_gaps, rmk_gate)
         classes[state] += 1; reasons.update(why)
         job_results.append({'job_id': str(job['id']), 'canonical_status': job['status'], 'composition': group,
                             'freshness_status': state, 'reasons': why})
@@ -164,11 +170,14 @@ def generate_report(jobs, sources, runs, now, native_hours=72):
         rows = by_source[name]; active = [s for s in rows if s['is_active']]
         history = sorted((r for r in runs if r['source_name'] == name), key=lambda r: dt(r['started_at']))
         successes = [r for r in history if r['status'] == 'success']
-        complete = [r for r in history if full_complete(r)] if name in DIRECT else []
+        complete = [r for r in history if full_complete(r, rmk_gate)] if name in DIRECT else []
         authoritative_scopes = []
         for r in history:
             life = (r.get('metadata') or {}).get('lifecycle') or {}
             checked = [s for s in life.get('scopes', []) if s.get('successful') is True and s.get('complete') is True]
+            if name == 'successfactors_direct':
+                checked = [s for s in checked if (r.get('metadata') or {}).get('validated_scopes') is True
+                           and reviewed_identity(s.get('scope'), rmk_gate)]
             if checked and r['status'] == 'success' and not (name in HEAVY and bounded_run(r)):
                 authoritative_scopes.append({'run_id': str(r['id']), 'finished_at': r.get('finished_at'), 'scopes': [s['scope'] for s in checked]})
             if life and dt(r['started_at']) >= now - timedelta(days=7):
@@ -190,7 +199,7 @@ def generate_report(jobs, sources, runs, now, native_hours=72):
                 'latest_complete_unbounded_run': {'run_id': str(complete[-1]['id']), 'finished_at': complete[-1].get('finished_at')} if complete else None,
                 'latest_authoritative_complete_scope_verification': authoritative_scopes[-1] if authoritative_scopes else None,
                 'complete_scope_verification_is_not_full_population': True})
-    current_absence = [s for s in sources if not s['is_active'] and proven_scope(s, run_index, 'absent')]
+    current_absence = [s for s in sources if not s['is_active'] and proven_scope(s, run_index, 'absent', rmk_gate)]
     totals = {'active_jobs': sum(v['active_jobs'] for v in age.values()),
         **{key: {str(h): sum(v[key][str(h)] for v in age.values()) for h in WINDOWS} for key in ('no_seen', 'no_verified')}}
     report = {'schema_version': 'freshness-report-v1', 'snapshot_at': now.isoformat(),
@@ -198,7 +207,8 @@ def generate_report(jobs, sources, runs, now, native_hours=72):
         'source_rows': {'total': len(sources), 'active': sum(s['is_active'] for s in sources), 'inactive': sum(not s['is_active'] for s in sources)},
         'sources': family, 'active_age_by_composition': dict(sorted(age.items())), 'active_age_totals': totals,
         'direct_verification': complete_sources, 'derived_status_counts': {k: classes[k] for k in ('VERIFIED_ACTIVE', 'CONFIRMED_INACTIVE', 'NEEDS_VERIFICATION')},
-        'scope_health': {'lever_direct': scope_health_report(runs, now, policy)},
+        'scope_health': {'lever_direct': scope_health_report(runs, now, policy),
+                        'successfactors_direct': ownership_report(by_source['successfactors_direct'], rmk_gate)},
         'derived_subreason_counts_overlapping': dict(sorted(reasons.items())),
         'lifecycle': {'last_7d_runs': recent_lifecycle,
             'deactivated_last_7d': sum(r['deactivated'] for r in recent_lifecycle),
@@ -254,7 +264,9 @@ def markdown(report):
         'Subreasons (overlapping):', '```json', json.dumps(report['derived_subreason_counts_overlapping'], indent=2), '```', '',
         '## Native authoritative completeness', '', '```json', json.dumps(report['direct_verification'], indent=2), '```', '',
         'Bounded complete scopes are not full-population verification. Filtered/partial heavy scopes remain unproven.', '',
-        '## Lever scope health and coverage gaps', '', '```json', json.dumps(report.get('scope_health', {}), indent=2, default=str), '```', '',
+        '## Lever scope health and coverage gaps', '', '```json', json.dumps(report.get('scope_health', {}).get('lever_direct', []), indent=2, default=str), '```', '',
+        '## RMK ownership and coverage gaps', '', '```json', json.dumps(report.get('scope_health', {}).get('successfactors_direct', {}), indent=2, default=str), '```', '',
+        'RMK exact and legacy deterministic ownership use the same resolver as lifecycle. Ownership alone does not prove inventory completeness; ambiguous, malformed and unreviewed rows remain unverified.', '',
         'Reviewed gaps are not complete inventories. Availability probes never refresh native verification; expired reviews and unexpected failures require operator action.', '',
         '## Lifecycle', '', '```json', json.dumps(report['lifecycle'], indent=2), '```', '',
         'Canonical closure-event counts are unknown for legacy runs without transition metrics; current closed-with-absence counts are not historical event counts.',

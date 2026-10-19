@@ -36,7 +36,8 @@ class Store:
             if source == "workday_direct":
                 return parts[:2] == scope[:2] and row.get("host") == scope[2]
             if source == "successfactors_direct":
-                return parts[0] == scope[0] and row.get("host") == scope[1] and row.get("brand") == scope[2]
+                return parts[0] == scope[0] and (len(scope) == 1 or
+                    row.get('metadata') == scope[1].obj.get(row['identity']))
             return parts[:len(scope)] == scope
         return [r for r in self.sources.values() if owns(r)]
 
@@ -49,6 +50,8 @@ class Store:
             rows = ([r for r in self.sources.values() if r["source"] == params[0] and r["identity"] in params[1]]
                     if "source_job_id = any" in query else self.matches(query, params))
             self.rows = [(r["identity"], r["job"], r["active"]) for r in rows]
+            if ", raw_payload->'rmk_site'" in query:
+                self.rows = [(*values, r.get('metadata')) for values, r in zip(self.rows, rows)]
         elif query.startswith("select id from public.jobs"):
             self.rows = [(i,) for i in sorted(params[0])]
         elif query.startswith("update public.job_sources"):

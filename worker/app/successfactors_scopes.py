@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.adapters.successfactors import RMKError, bounded_locale_views, classify_platform, public_url
+from app.rmk_ownership import RMKScopeIdentity
 
 
 CONFIG_PATH = Path(__file__).parent / "config" / "successfactors_scopes.json"
@@ -99,8 +100,12 @@ def load_scope_gate(path=None):
 
 def apply_scope_gate(config, rule):
     """Fail closed on identity drift; bound public locale recall explicitly."""
-    if (config.tenant != rule.native_tenant or config.brand != rule.native_search_brand
-            or urlsplit(config.search_url).hostname != rule.host or config.hosts != {rule.host}):
+    try:
+        owner = RMKScopeIdentity.from_catalog(config.search_url, config.tenant, config.brand)
+    except (ValueError, TypeError):
+        raise RMKError("config_regression", "Public RMK catalog identity is malformed") from None
+    if (owner != RMKScopeIdentity(rule.host, rule.native_tenant, rule.native_search_brand)
+            or config.hosts != {rule.host}):
         raise RMKError("config_regression", "Public RMK configuration differs from its reviewed scope")
     if rule.locale_union is None:
         config.locale = rule.preferred_locale

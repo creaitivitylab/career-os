@@ -70,8 +70,9 @@ def scope_predicate(source, scope):
         host, tenant, brand = scope
         if ':' in host or ':' in tenant:
             raise ValueError("Invalid native RMK scope")
-        return ("split_part(source_job_id, ':', 1) = %s and raw_payload->'rmk_site'->>'host' = %s "
-                "and raw_payload->'rmk_site'->>'brand' = %s", (tenant, host, brand))
+        # Candidate selection only. RMK ownership is resolved by the shared
+        # contract below, not a second SQL interpretation of legacy JSON.
+        return ("split_part(source_job_id, ':', 1) = %s", (tenant,))
     if any(not value or ':' in value for value in scope):
         raise ValueError("Invalid native inventory scope")
     if source == "smartrecruiters_direct":
@@ -112,10 +113,24 @@ class InventoryScope:
         self.run, self.parts = run, parts
         predicate, args = scope_predicate(run.source, parts)
         self.where, self.args = "source_name = %s and " + predicate, (run.source, *args)
-        run.cur.execute("select source_job_id, job_id, is_active from public.job_sources where " + self.where,
-                        self.args)
-        self.before = {identity: (job, active) for identity, job, active in run.cur.fetchall()}
+        self.rmk_gate = None
+        if run.source == "successfactors_direct":
+            from app.successfactors_scopes import load_scope_gate
+            self.rmk_gate = load_scope_gate()
+        self.before = self._owned_rows()
         self.seen, self.finished = set(), False
+
+    def _owned_rows(self):
+        extra = ", raw_payload->'rmk_site'" if self.rmk_gate is not None else ""
+        self.run.cur.execute("select source_job_id, job_id, is_active" + extra +
+                             " from public.job_sources where " + self.where, self.args)
+        rows = self.run.cur.fetchall()
+        if self.rmk_gate is None:
+            return {identity: (job, active) for identity, job, active in rows}
+        from app.rmk_ownership import resolve_ownership
+        owned = [r for r in rows if resolve_ownership(r[3], r[0], self.rmk_gate).matches(self.parts)]
+        self.ownership_preimages = {r[0]: r[3] for r in owned}
+        return {identity: (job, active) for identity, job, active, _ in owned}
 
     def observe(self, identity):
         check_deadline()
@@ -134,9 +149,11 @@ class InventoryScope:
             raise RuntimeError("Scope already completed")
         self.finished = True
         cur = self.run.cur
-        cur.execute("select source_job_id, job_id, is_active from public.job_sources where " + self.where,
-                    self.args)
-        current = {identity: (job, active) for identity, job, active in cur.fetchall()}
+        if self.rmk_gate is not None:
+            from app.rmk_ownership import reviewed_identity
+            if completion.may_reconcile and not reviewed_identity(self.parts, self.rmk_gate):
+                completion = InventoryCompletion(completion.successful, False, "unvalidated RMK ownership scope")
+        current = self._owned_rows()
         # A positively verified RMK identity can be shared by brands/aliases.
         # Positive evidence is safe across those views; absence ownership is not.
         cur.execute("select source_job_id, job_id, is_active from public.job_sources "
@@ -144,7 +161,8 @@ class InventoryScope:
                     (self.run.source, sorted(self.seen)))
         seen_rows = {identity: (job, active) for identity, job, active in cur.fetchall()}
         missing = {identity for identity, (_, active) in self.before.items()
-                   if active is True and identity not in self.seen} if completion.may_reconcile else set()
+                   if active is True and identity not in self.seen
+                   and (self.rmk_gate is None or identity in current)} if completion.may_reconcile else set()
         observed = self.seen & seen_rows.keys()
         touched = {seen_rows[identity][0] for identity in observed}
         if completion.may_reconcile:
@@ -163,11 +181,17 @@ class InventoryScope:
                 (now, now, now, Jsonb({**meta, "state": "observed"}), self.run.source, sorted(observed)))
         deactivated = []
         if missing:
+            ownership_guard, ownership_args = "", ()
+            if self.rmk_gate is not None:
+                # Compare the complete metadata preimage at UPDATE time as well.
+                # A concurrent ownership change cannot turn uncertainty into absence.
+                ownership_guard = " and (source_job_id, raw_payload->'rmk_site') in (select key,value from jsonb_each(%s))"
+                ownership_args = (Jsonb({i: self.ownership_preimages[i] for i in sorted(missing)}),)
             cur.execute("""update public.job_sources set is_active = false, last_verified_at = %s,
                 updated_at = %s,
                 raw_payload = jsonb_set(coalesce(raw_payload, '{}'::jsonb), '{_lifecycle}', %s)
-                where """ + self.where + " and is_active = true and source_job_id = any(%s) returning job_id",
-                (now, now, Jsonb({**meta, "state": "absent"}), *self.args, sorted(missing)))
+                where """ + self.where + ownership_guard + " and is_active = true and source_job_id = any(%s) returning job_id",
+                (now, now, Jsonb({**meta, "state": "absent"}), *self.args, *ownership_args, sorted(missing)))
             deactivated = cur.fetchall()
         refresh_job_activity(cur, touched)
         result = {"scope": list(self.parts), "successful": completion.successful,
