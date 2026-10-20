@@ -1,0 +1,592 @@
+{
+  "workday_pathless": [
+    {
+      "diagnostic_reference": "accenture.wd103.myworkdayjobs.com|accenture|AccentureCareers|unretained-observation-1",
+      "scope": [
+        "accenture.wd103.myworkdayjobs.com",
+        "accenture",
+        "AccentureCareers"
+      ],
+      "observation_number_within_scope": 1,
+      "raw_record_retained": false,
+      "page_offset_position_retained": false,
+      "why_pathless": "Committed adapter counted a listing with externalPath absent/null; exact raw stub was not retained.",
+      "native_source_job_id": null,
+      "other_native_wid_proved": false,
+      "classification": "C_IDENTITY_UNKNOWN",
+      "upstream_malformed_proved": false,
+      "recovery": "NONE; neither requisition nor a URL token can replace jobPostingInfo.id",
+      "lifecycle_authority": "Downgraded; these scopes were already non-authoritative."
+    },
+    {
+      "diagnostic_reference": "accenture.wd103.myworkdayjobs.com|accenture|AccentureCareers|unretained-observation-2",
+      "scope": [
+        "accenture.wd103.myworkdayjobs.com",
+        "accenture",
+        "AccentureCareers"
+      ],
+      "observation_number_within_scope": 2,
+      "raw_record_retained": false,
+      "page_offset_position_retained": false,
+      "why_pathless": "Committed adapter counted a listing with externalPath absent/null; exact raw stub was not retained.",
+      "native_source_job_id": null,
+      "other_native_wid_proved": false,
+      "classification": "C_IDENTITY_UNKNOWN",
+      "upstream_malformed_proved": false,
+      "recovery": "NONE; neither requisition nor a URL token can replace jobPostingInfo.id",
+      "lifecycle_authority": "Downgraded; these scopes were already non-authoritative."
+    },
+    {
+      "diagnostic_reference": "ghr.wd1.myworkdayjobs.com|ghr|US-EMPLSV|unretained-observation-1",
+      "scope": [
+        "ghr.wd1.myworkdayjobs.com",
+        "ghr",
+        "US-EMPLSV"
+      ],
+      "observation_number_within_scope": 1,
+      "raw_record_retained": false,
+      "page_offset_position_retained": false,
+      "why_pathless": "Committed adapter counted a listing with externalPath absent/null; exact raw stub was not retained.",
+      "native_source_job_id": null,
+      "other_native_wid_proved": false,
+      "classification": "C_IDENTITY_UNKNOWN",
+      "upstream_malformed_proved": false,
+      "recovery": "NONE; neither requisition nor a URL token can replace jobPostingInfo.id",
+      "lifecycle_authority": "Downgraded; these scopes were already non-authoritative."
+    },
+    {
+      "diagnostic_reference": "ghr.wd1.myworkdayjobs.com|ghr|US-EMPLSV|unretained-observation-2",
+      "scope": [
+        "ghr.wd1.myworkdayjobs.com",
+        "ghr",
+        "US-EMPLSV"
+      ],
+      "observation_number_within_scope": 2,
+      "raw_record_retained": false,
+      "page_offset_position_retained": false,
+      "why_pathless": "Committed adapter counted a listing with externalPath absent/null; exact raw stub was not retained.",
+      "native_source_job_id": null,
+      "other_native_wid_proved": false,
+      "classification": "C_IDENTITY_UNKNOWN",
+      "upstream_malformed_proved": false,
+      "recovery": "NONE; neither requisition nor a URL token can replace jobPostingInfo.id",
+      "lifecycle_authority": "Downgraded; these scopes were already non-authoritative."
+    },
+    {
+      "diagnostic_reference": "kiongroup.wd3.myworkdayjobs.com|kiongroup|KIONGroup|unretained-observation-1",
+      "scope": [
+        "kiongroup.wd3.myworkdayjobs.com",
+        "kiongroup",
+        "KIONGroup"
+      ],
+      "observation_number_within_scope": 1,
+      "raw_record_retained": false,
+      "page_offset_position_retained": false,
+      "why_pathless": "Committed adapter counted a listing with externalPath absent/null; exact raw stub was not retained.",
+      "native_source_job_id": null,
+      "other_native_wid_proved": false,
+      "classification": "C_IDENTITY_UNKNOWN",
+      "upstream_malformed_proved": false,
+      "recovery": "NONE; neither requisition nor a URL token can replace jobPostingInfo.id",
+      "lifecycle_authority": "Downgraded; these scopes were already non-authoritative."
+    },
+    {
+      "diagnostic_reference": "kiongroup.wd3.myworkdayjobs.com|kiongroup|KIONGroup|unretained-observation-2",
+      "scope": [
+        "kiongroup.wd3.myworkdayjobs.com",
+        "kiongroup",
+        "KIONGroup"
+      ],
+      "observation_number_within_scope": 2,
+      "raw_record_retained": false,
+      "page_offset_position_retained": false,
+      "why_pathless": "Committed adapter counted a listing with externalPath absent/null; exact raw stub was not retained.",
+      "native_source_job_id": null,
+      "other_native_wid_proved": false,
+      "classification": "C_IDENTITY_UNKNOWN",
+      "upstream_malformed_proved": false,
+      "recovery": "NONE; neither requisition nor a URL token can replace jobPostingInfo.id",
+      "lifecycle_authority": "Downgraded; these scopes were already non-authoritative."
+    },
+    {
+      "diagnostic_reference": "nxp.wd3.myworkdayjobs.com|nxp|careers|unretained-observation-1",
+      "scope": [
+        "nxp.wd3.myworkdayjobs.com",
+        "nxp",
+        "careers"
+      ],
+      "observation_number_within_scope": 1,
+      "raw_record_retained": false,
+      "page_offset_position_retained": false,
+      "why_pathless": "Committed adapter counted a listing with externalPath absent/null; exact raw stub was not retained.",
+      "native_source_job_id": null,
+      "other_native_wid_proved": false,
+      "classification": "C_IDENTITY_UNKNOWN",
+      "upstream_malformed_proved": false,
+      "recovery": "NONE; neither requisition nor a URL token can replace jobPostingInfo.id",
+      "lifecycle_authority": "Downgraded; these scopes were already non-authoritative."
+    },
+    {
+      "diagnostic_reference": "nxp.wd3.myworkdayjobs.com|nxp|careers|unretained-observation-2",
+      "scope": [
+        "nxp.wd3.myworkdayjobs.com",
+        "nxp",
+        "careers"
+      ],
+      "observation_number_within_scope": 2,
+      "raw_record_retained": false,
+      "page_offset_position_retained": false,
+      "why_pathless": "Committed adapter counted a listing with externalPath absent/null; exact raw stub was not retained.",
+      "native_source_job_id": null,
+      "other_native_wid_proved": false,
+      "classification": "C_IDENTITY_UNKNOWN",
+      "upstream_malformed_proved": false,
+      "recovery": "NONE; neither requisition nor a URL token can replace jobPostingInfo.id",
+      "lifecycle_authority": "Downgraded; these scopes were already non-authoritative."
+    }
+  ],
+  "rmk_retained_failures": [
+    {
+      "scope": [
+        "apply-now.serco.com",
+        "SercoGroup",
+        ""
+      ],
+      "posting_id": "1372519457",
+      "source_job_id": "SercoGroup:1372519457",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "apply-now.serco.com",
+        "SercoGroup",
+        ""
+      ],
+      "posting_id": "1372144757",
+      "source_job_id": "SercoGroup:1372144757",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "apply-now.serco.com",
+        "SercoGroup",
+        ""
+      ],
+      "posting_id": "1374557457",
+      "source_job_id": "SercoGroup:1374557457",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "apply-now.serco.com",
+        "SercoGroup",
+        ""
+      ],
+      "posting_id": "1373761257",
+      "source_job_id": "SercoGroup:1373761257",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "apply-now.serco.com",
+        "SercoGroup",
+        ""
+      ],
+      "posting_id": "1368672057",
+      "source_job_id": "SercoGroup:1368672057",
+      "kind": "missing_identity",
+      "signature": "RMK detail lacks native posting identity",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "apply-now.serco.com",
+        "SercoGroup",
+        ""
+      ],
+      "posting_id": "1354688657",
+      "source_job_id": "SercoGroup:1354688657",
+      "kind": "missing_identity",
+      "signature": "RMK detail lacks native posting identity",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "careers.capgemini.com",
+        "capgemitecP3",
+        ""
+      ],
+      "posting_id": "1449037733",
+      "source_job_id": "capgemitecP3:1449037733",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "careers.capgemini.com",
+        "capgemitecP3",
+        ""
+      ],
+      "posting_id": "1407086033",
+      "source_job_id": "capgemitecP3:1407086033",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "careers.capgemini.com",
+        "capgemitecP3",
+        ""
+      ],
+      "posting_id": "1370478433",
+      "source_job_id": "capgemitecP3:1370478433",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "careers.capgemini.com",
+        "capgemitecP3",
+        ""
+      ],
+      "posting_id": "1413878533",
+      "source_job_id": "capgemitecP3:1413878533",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "careers.capgemini.com",
+        "capgemitecP3",
+        ""
+      ],
+      "posting_id": "1400051133",
+      "source_job_id": "capgemitecP3:1400051133",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "elchxmprod.jobs.hr.cloud.sap",
+        "elcHXMProd",
+        ""
+      ],
+      "posting_id": "1441225300",
+      "source_job_id": "elcHXMProd:1441225300",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "elchxmprod.jobs.hr.cloud.sap",
+        "elcHXMProd",
+        ""
+      ],
+      "posting_id": "1403084500",
+      "source_job_id": "elcHXMProd:1403084500",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "elchxmprod.jobs.hr.cloud.sap",
+        "elcHXMProd",
+        ""
+      ],
+      "posting_id": "1440411800",
+      "source_job_id": "elcHXMProd:1440411800",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "elchxmprod.jobs.hr.cloud.sap",
+        "elcHXMProd",
+        ""
+      ],
+      "posting_id": "1439635800",
+      "source_job_id": "elcHXMProd:1439635800",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "elchxmprod.jobs.hr.cloud.sap",
+        "elcHXMProd",
+        ""
+      ],
+      "posting_id": "1417693700",
+      "source_job_id": "elcHXMProd:1417693700",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "elchxmprod.jobs.hr.cloud.sap",
+        "elcHXMProd",
+        ""
+      ],
+      "posting_id": "1418972700",
+      "source_job_id": "elcHXMProd:1418972700",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "elchxmprod.jobs.hr.cloud.sap",
+        "elcHXMProd",
+        ""
+      ],
+      "posting_id": "1418731000",
+      "source_job_id": "elcHXMProd:1418731000",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "elchxmprod.jobs.hr.cloud.sap",
+        "elcHXMProd",
+        ""
+      ],
+      "posting_id": "1418731500",
+      "source_job_id": "elcHXMProd:1418731500",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "elchxmprod.jobs.hr.cloud.sap",
+        "elcHXMProd",
+        ""
+      ],
+      "posting_id": "1428438500",
+      "source_job_id": "elcHXMProd:1428438500",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "elchxmprod.jobs.hr.cloud.sap",
+        "elcHXMProd",
+        ""
+      ],
+      "posting_id": "1438568400",
+      "source_job_id": "elcHXMProd:1438568400",
+      "kind": "missing_identity",
+      "signature": "RMK detail lacks native posting identity",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "jobs.foundever.com",
+        "SitelPROD",
+        ""
+      ],
+      "posting_id": "1441225900",
+      "source_job_id": "SitelPROD:1441225900",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "jobs.foundever.com",
+        "SitelPROD",
+        ""
+      ],
+      "posting_id": "1440443300",
+      "source_job_id": "SitelPROD:1440443300",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "jobs.foundever.com",
+        "SitelPROD",
+        ""
+      ],
+      "posting_id": "1252966700",
+      "source_job_id": "SitelPROD:1252966700",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "jobs.lear.com",
+        "learcorporP2",
+        ""
+      ],
+      "posting_id": "1448885933",
+      "source_job_id": "learcorporP2:1448885933",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "jobs.lear.com",
+        "learcorporP2",
+        ""
+      ],
+      "posting_id": "1448161833",
+      "source_job_id": "learcorporP2:1448161833",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "jobs.lear.com",
+        "learcorporP2",
+        ""
+      ],
+      "posting_id": "1436756833",
+      "source_job_id": "learcorporP2:1436756833",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "jobs.lear.com",
+        "learcorporP2",
+        ""
+      ],
+      "posting_id": "1436787933",
+      "source_job_id": "learcorporP2:1436787933",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "jobs.lear.com",
+        "learcorporP2",
+        ""
+      ],
+      "posting_id": "1445384033",
+      "source_job_id": "learcorporP2:1445384033",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    },
+    {
+      "scope": [
+        "jobs.lear.com",
+        "learcorporP2",
+        ""
+      ],
+      "posting_id": "1440275533",
+      "source_job_id": "learcorporP2:1440275533",
+      "kind": "malformed",
+      "signature": "RMK detail lacks native title/description",
+      "identity_value_retained": true
+    }
+  ],
+  "rmk_shells": [
+    {
+      "scope": [
+        "apply-now.serco.com",
+        "SercoGroup",
+        ""
+      ],
+      "posting_id": "1349379957",
+      "source_job_id": "SercoGroup:1349379957",
+      "kind": "withdrawn",
+      "signature": "RMK job is an empty/withdrawn shell"
+    },
+    {
+      "scope": [
+        "careers.capgemini.com",
+        "capgemitecP3",
+        ""
+      ],
+      "posting_id": "1276884201",
+      "source_job_id": "capgemitecP3:1276884201",
+      "kind": "withdrawn",
+      "signature": "RMK job is an empty/withdrawn shell"
+    },
+    {
+      "scope": [
+        "careers.capgemini.com",
+        "capgemitecP3",
+        ""
+      ],
+      "posting_id": "1424904133",
+      "source_job_id": "capgemitecP3:1424904133",
+      "kind": "withdrawn",
+      "signature": "RMK job is an empty/withdrawn shell"
+    },
+    {
+      "scope": [
+        "careers.capgemini.com",
+        "capgemitecP3",
+        ""
+      ],
+      "posting_id": "1421004233",
+      "source_job_id": "capgemitecP3:1421004233",
+      "kind": "withdrawn",
+      "signature": "RMK job is an empty/withdrawn shell"
+    },
+    {
+      "scope": [
+        "careers.capgemini.com",
+        "capgemitecP3",
+        ""
+      ],
+      "posting_id": "1429318233",
+      "source_job_id": "capgemitecP3:1429318233",
+      "kind": "withdrawn",
+      "signature": "RMK job is an empty/withdrawn shell"
+    },
+    {
+      "scope": [
+        "jobs.ball.com",
+        "ballcorpor",
+        "corp_packaging"
+      ],
+      "posting_id": "1435670600",
+      "source_job_id": "ballcorpor:1435670600",
+      "kind": "withdrawn",
+      "signature": "RMK job is an empty/withdrawn shell"
+    },
+    {
+      "scope": [
+        "opportunities.vodafone.com",
+        "vodafoneprP",
+        ""
+      ],
+      "posting_id": "1447440233",
+      "source_job_id": "vodafoneprP:1447440233",
+      "kind": "withdrawn",
+      "signature": "RMK job is an empty/withdrawn shell"
+    }
+  ],
+  "unretained_rmk_id_values": 12,
+  "unclassified_rmk_signatures": 11,
+  "synthetic_url_wrapper_only_in_tests": true
+}

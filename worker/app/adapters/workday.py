@@ -3,7 +3,8 @@ import json
 import re
 import unicodedata
 from app.operation_budget import check_deadline
-from dataclasses import dataclass
+from app.native_observation import diagnostic_context
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote, unquote, urlsplit
 
@@ -258,6 +259,7 @@ class WorkdayDiscovery:
     jobs: list[dict]
     counters: dict
     geography: dict | None
+    identity_diagnostics: list[dict] = field(default_factory=list)
 
 
 class WorkdayAdapter:
@@ -265,6 +267,7 @@ class WorkdayAdapter:
         self.client = client or httpx.Client(timeout=30, follow_redirects=False)
         self.owns_client = client is None
         self.max_pages = max_pages
+        self.identity_diagnostics = []
         self.counters = {"listing_calls": 0, "listing_records": 0, "candidate_records": 0,
                          "facet_candidates": 0, "fallback_skipped_foreign": 0,
                          "pagination_boundary_confirmed": 0, "listing_missing_path": 0,
@@ -326,6 +329,11 @@ class WorkdayAdapter:
             # fetchable posting identity; report it without inventing a URL.
             valid_records = [record for record in records if record.get("externalPath") is not None]
             self.counters["listing_missing_path"] += len(records) - len(valid_records)
+            for position, record in enumerate(records):
+                if record.get("externalPath") is None:
+                    self.identity_diagnostics.append(diagnostic_context(record, page=page_number,
+                        offset=offset, position=position, facet_query=applied,
+                        signature="listing_missing_path_no_native_wid", scope=list(board.scope)))
             paths = [normalize_external_path(record["externalPath"]) for record in valid_records]
             if any(path is None for path in paths):
                 raise WorkdayAPIError("malformed", "Workday listing has an invalid external job path")
@@ -381,7 +389,7 @@ class WorkdayAdapter:
                 jobs.append(record)
         self.counters["candidate_records"] = len(jobs)
         self.counters["facet_candidates"] = len(jobs) if geography else 0
-        return WorkdayDiscovery(jobs, dict(self.counters), geography)
+        return WorkdayDiscovery(jobs, dict(self.counters), geography, list(self.identity_diagnostics))
 
     def get_detail(self, board: WorkdaySite, external_path: str):
         path = normalize_external_path(external_path)

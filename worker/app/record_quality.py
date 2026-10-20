@@ -14,19 +14,26 @@ class RecordQuality:
         self.failures = Counter()
         self.examples = []
         self.required_failures = 0
+        self.fetch_failures = 0
+        self.unexpected_fetch_failures = 0
+        self.optional_failures = 0
 
     def failure(self, kind, *, identity=None, stage='required', count=1, signature=None):
         if type(count) is not int or count < 0:
             raise ValueError('Invalid record failure count')
         if identity is not None and (not isinstance(identity, str) or not identity.strip()):
             raise ValueError('Invalid proved identity')
-        if stage not in {'required', 'enrichment', 'identity'}:
+        if stage not in {'required', 'enrichment', 'identity', 'detail_fetch'}:
             raise ValueError('Invalid quality stage')
         if not count:
             return
         self.known += count if identity else 0
         self.unknown += count if not identity else 0
-        self.required_failures += count if stage != 'enrichment' else 0
+        self.required_failures += count if stage in {'required', 'identity'} else 0
+        self.optional_failures += count if stage == 'enrichment' else 0
+        self.fetch_failures += count if stage == 'detail_fetch' else 0
+        if stage == 'detail_fetch' and not (identity and signature == 'Public RMK HTTP 404'):
+            self.unexpected_fetch_failures += count
         self.failures[(kind, stage, bool(identity), signature or kind)] += count
         if count and len(self.examples) < 10:
             self.examples.append({'kind': kind, 'stage': stage, 'source_job_id': identity, 'count': count})
@@ -46,10 +53,13 @@ class RecordQuality:
                 'identity_unknown_failures': self.unknown,
                 'records_with_unknown_identity': self.unknown,
                 'required_field_failures': self.required_failures,
+                'detail_fetch_failures': self.fetch_failures,
+                'unexpected_detail_fetch_failures': self.unexpected_fetch_failures,
+                'optional_enrichment_failures': self.optional_failures,
                 'parsing_enrichment_failures': self.known + self.unknown,
                 'systemic_failure': systemic,
                 'systemic_reason': 'no usable records despite required-record failures' if systemic else None,
-                'alert_worthy': bool(self.unknown or self.required_failures or systemic),
+                'alert_worthy': bool(self.unknown or self.required_failures or self.unexpected_fetch_failures or systemic),
                 'signatures': [{'kind': k, 'stage': s, 'identity_known': i, 'signature': signature, 'count': n}
                                for (k, s, i, signature), n in sorted(self.failures.items())],
                 'examples': self.examples}

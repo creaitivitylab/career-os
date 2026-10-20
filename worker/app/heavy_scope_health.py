@@ -100,7 +100,7 @@ def classify_scope(source, row, now, policy):
     recorded_quality = row.get('record_quality') or {}
     quality = dict(recorded_quality if recorded_quality.get('version') == 1 else legacy_quality(row))
     for field in ('identity_preserving_failures', 'identity_unknown_failures', 'unclassified_failures',
-                  'required_field_failures', 'parsing_enrichment_failures'):
+                  'required_field_failures', 'parsing_enrichment_failures', 'unexpected_detail_fetch_failures'):
         if type(quality.get(field, 0)) is not int or quality.get(field, 0) < 0:
             raise ValueError('Invalid record quality counter')
     if quality.get('version') == 1:
@@ -115,7 +115,17 @@ def classify_scope(source, row, now, policy):
     # Recalculate alert semantics; a serialized boolean cannot suppress risk.
     quality['alert_worthy'] = bool(quality.get('identity_unknown_failures')
         or quality.get('unclassified_failures') or quality.get('required_field_failures')
-        or quality.get('systemic_failure'))
+        or quality.get('unexpected_detail_fetch_failures') or quality.get('systemic_failure'))
+    manifest = row.get('identity_manifest')
+    if manifest is not None:
+        from app.native_observation import identity_coverage
+        presence_complete = identity_coverage(manifest, source, life.get('scope', []))
+        if quality.get('identity_unknown_failures', 0) != manifest['identities_unknown']:
+            raise ValueError('Quality and native identity accounting disagree')
+        quality_blocks_authority = not presence_complete or bool(quality.get('systemic_failure'))
+    else:
+        # Old rows lack independent listing/native-ID proof; retain conservative compatibility.
+        quality_blocks_authority = quality['alert_worthy']
     acquisition = row.get('status') == 'success'
     complete = acquisition and life.get('successful') is True and life.get('complete') is True
     alerts = []
@@ -150,7 +160,7 @@ def classify_scope(source, row, now, policy):
         alerts.append('acquisition_inventory_status_mismatch')
     if quality.get('alert_worthy'):
         alerts.append('record_quality_requires_review')
-        if complete:
+        if complete and quality_blocks_authority:
             coverage = 'INCOMPLETE'
     if quality.get('identity_unknown_failures') or quality.get('unclassified_failures'):
         if complete:
@@ -160,13 +170,16 @@ def classify_scope(source, row, now, policy):
     return {'scope': key, 'native_scope': life.get('scope'), 'state': state,
             'acquisition_health': 'HEALTHY' if acquisition else state,
             'acquisition_result': row.get('status'), 'coverage': coverage,
-            'lifecycle_eligible': complete and not quality['alert_worthy'] and not quarantined,
+            'lifecycle_eligible': complete and not quality_blocks_authority and not quarantined,
             'native_inventory_complete': complete,
             'lifecycle_reason': ('Reviewed quarantine requires explicit review' if quarantined else
-                'Record quality does not prove complete native identity coverage' if quality['alert_worthy'] else
+                'Record quality does not prove complete native identity coverage' if quality_blocks_authority else
                 life.get('reason', 'No completed native inventory')),
             'native_lifecycle_reason': life.get('reason'),
-            'record_quality': quality, 'alerts': alerts, 'alert_worthy': bool(alerts),
+            'record_quality': quality,
+            'identity_accounting': {k: v for k, v in manifest.items()
+                if k not in {'identities', 'failure_observations', 'unknown_observations'}} if manifest else None,
+            'alerts': alerts, 'alert_worthy': bool(alerts),
             'known_gap': valid and matched and not complete and coverage in {'NON_AUTHORITATIVE_EXPECTED', 'UNAVAILABLE'},
             'review': review, 'duration_seconds': row.get('duration_seconds'),
             'diagnostics': {k: row[k] for k in ('kind', 'error', 'blocked_transition') if k in row}}
@@ -184,8 +197,7 @@ def evaluate_source(source, result, now=None, policy=None):
         life = row.get('lifecycle')
         if life and native.get(tuple(life['scope'])) != life:
             raise ValueError('Conflicting native scope diagnostics')
-        if item['native_inventory_complete'] and (item['record_quality']['alert_worthy']
-                or item['state'] in {'KNOWN_UNAVAILABLE', 'NEEDS_REVIEW'}):
+        if item['native_inventory_complete'] and not item['lifecycle_eligible']:
             item['alerts'].append('legacy_authority_requires_record_quality_review')
             item['alert_worthy'] = True
     keys = [tuple(row['scope']) for row in health]
@@ -231,6 +243,10 @@ def evaluate_source(source, result, now=None, policy=None):
             'record_quality_totals': {key: sum(h['record_quality'].get(key, 0) for h in health)
                 for key in ('records_fetched', 'records_with_known_identity', 'identity_preserving_failures',
                             'identity_unknown_failures', 'unclassified_failures', 'parsing_enrichment_failures')},
+            'identity_totals': {key: sum((h.get('identity_accounting') or {}).get(key, 0) for h in health)
+                for key in ('observations_total', 'identities_proved', 'identities_unknown', 'existing_identities_seen',
+                            'new_identities_unpersisted_due_parse_failure', 'canonical_parse_failures',
+                            'canonical_upsert_failures', 'detail_fetch_failures', 'empty_shells')},
             'systemic_quality_scopes': sum(bool(h['record_quality'].get('systemic_failure')) for h in health),
             'review_never_grants_lifecycle_authority': True}
 

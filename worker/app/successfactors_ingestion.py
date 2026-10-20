@@ -17,6 +17,7 @@ from app.adapters.successfactors import (
 from app.canonical import update_canonical_job
 from app.lifecycle import LifecycleRun, InventoryCompletion
 from app.record_quality import RecordQuality
+from app.native_observation import IdentityManifest, rmk_listing_identity, request_context, diagnostic_context
 from app.heavy_scope_health import load_policy, policy_allows_lifecycle
 from app.rmk_ownership import RMKScopeIdentity
 from app.operation_budget import commit_inventory
@@ -207,6 +208,7 @@ def ingest_successfactors_jobs(host=None, brand=None, locale=None, max_sites=Non
                 tenant_scopes = Counter(r.native_tenant for r in load_scope_gate().scopes)
                 for site in sites:
                     inventory = None
+                    identities = None
                     quality = RecordQuality()
                     usable = 0
                     rule = rules.get((site.host, site.brand))
@@ -230,6 +232,17 @@ def ingest_successfactors_jobs(host=None, brand=None, locale=None, max_sites=Non
                             inventory = lifecycle.scope(*owner.key)
                             candidates, modes = adapter.discover_candidates(config)
                             result["discovery"] = modes
+                            identities = IdentityManifest(inventory)
+                            observations = []
+                            for index, listing in enumerate(candidates):
+                                try:
+                                    native_identity = rmk_listing_identity(config, listing)
+                                except (ValueError, TypeError):
+                                    native_identity = None
+                                observations.append(identities.add(index, native_identity,
+                                    origin="rmk_native_listing" if native_identity else "identity_unknown",
+                                    context=request_context(listing.get("url")) if native_identity else diagnostic_context(listing)))
+                            identities.load_existing()
                             # Compact audit of historical identities, not a
                             # substitute for current native listing discovery.
                             historical = set()
@@ -239,29 +252,46 @@ def ingest_successfactors_jobs(host=None, brand=None, locale=None, max_sites=Non
                                     if parsed and parsed["host"] in config.hosts:
                                         historical.add(parsed["posting_id"])
                             result["historical_discovered_ids"] = sorted(
-                                historical & {j["posting_id"] for j in candidates})
+                                historical & {j.get("posting_id") for j in candidates})
                             result["historical_detail_outcomes"] = {}
                             usable = unavailable = 0
-                            for listing in candidates:
+                            for listing, observation in zip(candidates, observations):
+                                if observation.source_job_id is None:
+                                    exc = RMKError("missing_identity", "RMK native listing identity is missing or inconsistent")
+                                    identities.failure(observation, exc, stage="identity", signature=str(exc))
+                                    quality.failure(exc.kind, stage="identity", signature=str(exc))
+                                    counts["failed"] += 1
+                                    counts["missing_identity"] += 1
+                                    continue
                                 counts["details_requested"] += 1
+                                stage = "canonical_parse"
                                 try:
                                     detail = adapter.get_detail(config, listing)
+                                    identities.fetched(observation)
                                     identity = source_job_id(config.tenant, detail["posting_id"])
-                                    inventory.observe(identity)
+                                    if identity != observation.source_job_id:
+                                        raise RMKError("identity_conflict", "RMK detail changed the native listing posting identity")
                                     if identity in seen_native:
                                         counts["duplicate_native_ids"] += 1
                                         usable += 1
+                                        identities.success(observation)
                                         if listing["posting_id"] in historical:
                                             result["historical_detail_outcomes"][listing["posting_id"]] = {"status": "czech_duplicate"}
                                         continue
+                                    stage = "canonical_parse"
                                     evidence = czech_evidence(detail)
                                     if listing["posting_id"] in historical:
                                         result["historical_detail_outcomes"][listing["posting_id"]] = {
                                             "status": "czech" if evidence else "ineligible",
                                             "reason": None if evidence else ineligible_reason(detail)}
                                     if evidence:
-                                        outcome, ambiguous = persist_posting(cur, site, config, listing, detail, evidence, rows,
-                                                                            datetime.now(timezone.utc))
+                                        # The outer source transaction is already open. This is a
+                                        # savepoint: a bad record cannot leave a company/job half-written.
+                                        stage = "canonical_upsert"
+                                        with conn.transaction():
+                                            outcome, ambiguous = persist_posting(cur, site, config, listing, detail, evidence, rows,
+                                                                                datetime.now(timezone.utc))
+                                        identities.persisted.add(identity)
                                         counts[outcome] += 1
                                         counts["ambiguous_attachment"] += ambiguous
                                         counts["czech_jobs"] += 1
@@ -271,11 +301,17 @@ def ingest_successfactors_jobs(host=None, brand=None, locale=None, max_sites=Non
                                         reason = ineligible_reason(detail)
                                         result["ineligible_reasons"][reason] = result["ineligible_reasons"].get(reason, 0) + 1
                                     usable += 1
+                                    identities.success(observation)
                                 except RMKError as exc:
-                                    # An empty 200 shell has no proved native identity; a native
-                                    # 404 is a protocol-level absence, not a parser failure.
-                                    if exc.kind != "withdrawn" or str(exc) != "Public RMK HTTP 404":
-                                        quality.protect(inventory, exc)
+                                    fetch = exc.kind in {"http", "access", "unsafe_url"} or str(exc) == "Public RMK HTTP 404"
+                                    conflict = exc.kind in {"identity_conflict", "unsafe_url"} or (exc.kind == "missing_identity" and
+                                        any(word in str(exc) for word in ("differs", "Unsafe")))
+                                    stage = "detail_fetch" if fetch else "canonical_parse"
+                                    if not fetch:
+                                        identities.fetched(observation)
+                                    identities.failure(observation, exc, stage=stage, signature=str(exc), conflict=conflict)
+                                    quality.failure(exc.kind, identity=observation.source_job_id,
+                                        stage="detail_fetch" if fetch else "required", signature=str(exc))
                                     if listing["posting_id"] in historical:
                                         result["historical_detail_outcomes"][listing["posting_id"]] = {
                                             "status": exc.kind, "reason": str(exc)}
@@ -287,7 +323,13 @@ def ingest_successfactors_jobs(host=None, brand=None, locale=None, max_sites=Non
                                         counts["missing_identity"] += exc.kind == "missing_identity"
                                     if len(result["detail_errors"]) < 10:
                                         result["detail_errors"].append({"posting_id": listing["posting_id"], "kind": exc.kind, "error": str(exc)})
-                            if candidates and not usable and unavailable != len(candidates):
+                                except (ValueError, TypeError, AttributeError, psycopg.DataError, psycopg.IntegrityError) as exc:
+                                    # Savepoint rolled back only this record. No secret SQL values in diagnostics.
+                                    signature = stage + ":" + type(exc).__name__
+                                    identities.failure(observation, exc, stage=stage, signature=signature)
+                                    quality.failure(type(exc).__name__, identity=observation.source_job_id, signature=signature)
+                                    counts["failed"] += 1
+                            if candidates and not usable and identities.unknown == len(candidates):
                                 raise RMKError("unusable", "No current listing candidate produced usable native detail")
                             processed += 1
                             result.update(status="success", discovery_status="resolved")
@@ -299,13 +341,16 @@ def ingest_successfactors_jobs(host=None, brand=None, locale=None, max_sites=Non
                             if status == "failed":
                                 counts["failed"] += 1
                             errors.append({"host": site.host, "brand": site.brand, "status": status, "kind": exc.kind, "error": str(exc)})
+                        if identities is not None:
+                            result["identity_manifest"] = identities.summary()
                         result["record_quality"] = quality.summary(adapter.counters["listing_records"],
                             len(inventory.seen) if inventory is not None else 0,
                             usable=usable)
                         if inventory is not None:
                             complete = (result.get("status") == "success" and rule is not None
                                         and policy_allows_lifecycle(SOURCE_NAME, result, health_policy)
-                                        and not counts["failed"] and not quality.unknown
+                                        and identities is not None and identities.identity_complete
+                                        and not result["record_quality"]["systemic_failure"]
                                         and not adapter.counters["fallback_skipped_foreign"]
                                         and all(m["mode"] == "fallback" for m in modes)
                                         and set(config.advertised_locales).issubset(config.locales)

@@ -737,4 +737,7 @@ class SuccessFactorsAdapter:
 
     def get_detail(self, config, job):
         url, text = self._request("GET", job["url"], config.hosts)
-        return parse_detail(url, text, config)
+        detail = parse_detail(url, text, config)
+        if detail["posting_id"] != job["posting_id"]:
+            raise RMKError("identity_conflict", "RMK detail changed the native listing posting identity")
+        return detail

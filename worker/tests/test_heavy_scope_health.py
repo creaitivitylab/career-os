@@ -336,7 +336,7 @@ class IngestionQualityTests(unittest.TestCase):
         self.assertEqual(r['record_quality']['identity_unknown_failures'],0)
         self.assertFalse(r['lifecycle']['complete'])
 
-    def test_rmk_empty_shell_cannot_be_silent_complete(self):
+    def test_rmk_empty_shell_retains_new_listing_identity_without_inventing_job(self):
         from test_successfactors import RMKCursor,row as rmk_row
         h=self.rmk_harness()
         original=h.serve
@@ -352,8 +352,10 @@ class IngestionQualityTests(unittest.TestCase):
         h.factory.side_effect=lambda:SuccessFactorsAdapter(client)
         response,conn=h.request(RMKCursor([rmk_row()]))
         r=response.json()['site_results'][0]
-        self.assertEqual(r['record_quality']['identity_unknown_failures'],1)
-        self.assertFalse(r['lifecycle']['complete'])
+        self.assertEqual(r['record_quality']['identity_unknown_failures'],0)
+        self.assertEqual(r['identity_manifest']['identities'],['ACME:123'])
+        self.assertEqual(r['identity_manifest']['new_identities_unpersisted_due_parse_failure'],1)
+        self.assertFalse(r['lifecycle']['complete'])  # unreviewed/filtered native scope remains protected
         self.assertEqual(r['lifecycle']['deactivated'],0)
 
 

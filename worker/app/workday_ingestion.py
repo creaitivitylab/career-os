@@ -17,6 +17,7 @@ from app.adapters.workday import (
 from app.canonical import update_canonical_job
 from app.lifecycle import LifecycleRun, InventoryCompletion
 from app.record_quality import RecordQuality
+from app.native_observation import IdentityManifest
 from app.operation_budget import commit_inventory
 from app.ingestion import get_or_create_company
 from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
@@ -238,6 +239,7 @@ def ingest_workday_jobs(host=None, tenant=None, site=None, max_sites=None, local
                     inventory = lifecycle.scope(board.host, board.tenant, board.site)
                     counters = dict.fromkeys(COUNTERS, 0)
                     quality = RecordQuality()
+                    identities = IdentityManifest(inventory)
                     errors, usable_details, unavailable, native_ids = [], 0, 0, set()
                     result = {"host": board.host, "tenant": board.tenant, "site": board.site}
                     with WorkdayAdapter() as adapter:
@@ -260,43 +262,71 @@ def ingest_workday_jobs(host=None, tenant=None, site=None, max_sites=None, local
                             counters["failed"] += counters["listing_missing_path"]
                             result.update(discovery_mode="geography_facet" if discovery.geography else "fallback",
                                           geography=discovery.geography)
-                            for listing in discovery.jobs:
+                            for index, listing in enumerate(discovery.jobs):
                                 path = listing["externalPath"]
+                                observation = identities.add(index, context={"request_path": normalize_external_path(path),
+                                                                            "api_base": board.api_base})
                                 counters["details_requested"] += 1
+                                stage = "canonical_parse"
                                 try:
                                     detail = adapter.get_detail(board, path)
+                                    identities.fetched(observation)
                                     identity = source_job_id(board, detail["jobPostingInfo"].get("id"))
-                                    inventory.observe(identity)
+                                    identities.prove(observation, identity, "workday_native_detail")
                                     if identity in native_ids:
                                         counters["duplicate_native_ids"] += 1
+                                        identities.success(observation)
                                         continue
                                     native_ids.add(identity)
+                                    stage = "canonical_parse"
                                     evidence = czech_evidence(detail)
                                     if evidence is not None:
-                                        outcome = persist_posting(cur, board, listing, detail, evidence, attachments,
-                                                                  datetime.now(timezone.utc))
+                                        stage = "canonical_upsert"
+                                        with conn.transaction():
+                                            outcome = persist_posting(cur, board, listing, detail, evidence, attachments,
+                                                                      datetime.now(timezone.utc))
+                                        identities.persisted.add(identity)
                                         counters[outcome] += 1
                                         counters["czech_jobs"] += 1
                                         counters[evidence["kind"] + "_jobs"] += 1
                                     usable_details += 1
+                                    identities.success(observation)
                                 except WorkdayAPIError as exc:
-                                    if exc.kind != "unavailable":
-                                        quality.protect(inventory, exc)
+                                    if exc.source_identity:
+                                        identities.prove(observation, exc.source_identity, "workday_native_detail")
+                                    fetch = exc.kind in {"unavailable", "forbidden", "transient"}
+                                    if not fetch:
+                                        identities.fetched(observation)
+                                    identities.failure(observation, exc, stage="detail_fetch" if fetch else "canonical_parse",
+                                                       signature=str(exc))
+                                    quality.failure(exc.kind, identity=observation.source_job_id,
+                                        stage="detail_fetch" if fetch else "required", signature=str(exc))
                                     record_detail_error(counters, errors, path, exc)
                                     unavailable += exc.kind == "unavailable"
+                                except (ValueError, TypeError, AttributeError, psycopg.DataError, psycopg.IntegrityError) as exc:
+                                    signature = stage + ":" + type(exc).__name__
+                                    identities.failure(observation, exc, stage=stage, signature=signature)
+                                    quality.failure(type(exc).__name__, identity=observation.source_job_id, signature=signature)
+                                    counters["failed"] += 1
                             # Empty/foreign-only catalogs and postings withdrawn with 404
                             # are successful checks. 403/S22 is never an expiry signal.
                             success = (not discovery.jobs and not counters["listing_missing_path"]) or usable_details > 0 or (
-                                unavailable == len(discovery.jobs) and counters["failed"] == 0)
+                                unavailable == len(discovery.jobs) and counters["failed"] == 0) or bool(inventory.seen)
                             result["status"] = "success" if success else "failed"
                             if success:
                                 successful_sites += 1
                             else:
                                 site_errors.append({**result, "error": "No listing candidate produced usable detail data"})
+                    diagnostics = discovery.identity_diagnostics if result.get("discovery_mode") != "failed" else list(adapter.identity_diagnostics)
+                    for index in range(counters["listing_missing_path"]):
+                        context = diagnostics[index] if index < len(diagnostics) else {"signature": "listing_missing_path", "raw_record_retained": False}
+                        identities.add("pathless:" + str(index), context=context)
                     quality.failure("listing_missing_path", stage="identity", count=counters["listing_missing_path"])
+                    result["identity_manifest"] = identities.summary()
                     result["record_quality"] = quality.summary(counters["listing_records"], len(inventory.seen),
                                                                usable=usable_details)
-                    complete = (result.get("status") == "success" and not counters["failed"]
+                    complete = (result.get("status") == "success" and identities.identity_complete
+                                and not result["record_quality"]["systemic_failure"]
                                 and result.get("discovery_mode") == "fallback"
                                 and not counters["fallback_skipped_foreign"]
                                 and not counters["listing_missing_path"])
