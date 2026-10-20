@@ -1,0 +1,144 @@
+{
+  "workday": [
+    {
+      "scope": [
+        "accenture.wd103.myworkdayjobs.com",
+        "accenture",
+        "AccentureCareers"
+      ],
+      "count": 2,
+      "signature": "listing_missing_path",
+      "stable_identity_known": false,
+      "existing_identity": "cannot determine without reliable native ID",
+      "optional_failure": false,
+      "lifecycle_impact": "Incomplete identity coverage; no absence authority; alert. Do not fabricate path or use requisition."
+    },
+    {
+      "scope": [
+        "ghr.wd1.myworkdayjobs.com",
+        "ghr",
+        "US-EMPLSV"
+      ],
+      "count": 2,
+      "signature": "listing_missing_path",
+      "stable_identity_known": false,
+      "existing_identity": "cannot determine without reliable native ID",
+      "optional_failure": false,
+      "lifecycle_impact": "Incomplete identity coverage; no absence authority; alert. Do not fabricate path or use requisition."
+    },
+    {
+      "scope": [
+        "kiongroup.wd3.myworkdayjobs.com",
+        "kiongroup",
+        "KIONGroup"
+      ],
+      "count": 2,
+      "signature": "listing_missing_path",
+      "stable_identity_known": false,
+      "existing_identity": "cannot determine without reliable native ID",
+      "optional_failure": false,
+      "lifecycle_impact": "Incomplete identity coverage; no absence authority; alert. Do not fabricate path or use requisition."
+    },
+    {
+      "scope": [
+        "nxp.wd3.myworkdayjobs.com",
+        "nxp",
+        "careers"
+      ],
+      "count": 2,
+      "signature": "listing_missing_path",
+      "stable_identity_known": false,
+      "existing_identity": "cannot determine without reliable native ID",
+      "optional_failure": false,
+      "lifecycle_impact": "Incomplete identity coverage; no absence authority; alert. Do not fabricate path or use requisition."
+    }
+  ],
+  "rmk": [
+    {
+      "host": "apply-now.serco.com",
+      "legacy_failed_counter": 6,
+      "status": "success",
+      "missing_identity_total": 2,
+      "unsampled_missing_identity": 0,
+      "unrecorded_signature_count": 0,
+      "withdrawn_shells": 1
+    },
+    {
+      "host": "careers.capgemini.com",
+      "legacy_failed_counter": 5,
+      "status": "success",
+      "missing_identity_total": 0,
+      "unsampled_missing_identity": 0,
+      "unrecorded_signature_count": 0,
+      "withdrawn_shells": 4
+    },
+    {
+      "host": "elchxmprod.jobs.hr.cloud.sap",
+      "legacy_failed_counter": 22,
+      "status": "success",
+      "missing_identity_total": 2,
+      "unsampled_missing_identity": 1,
+      "unrecorded_signature_count": 11,
+      "withdrawn_shells": 0
+    },
+    {
+      "host": "jobs.ball.com",
+      "legacy_failed_counter": 0,
+      "status": "success",
+      "missing_identity_total": 0,
+      "unsampled_missing_identity": 0,
+      "unrecorded_signature_count": 0,
+      "withdrawn_shells": 1
+    },
+    {
+      "host": "jobs.foundever.com",
+      "legacy_failed_counter": 3,
+      "status": "success",
+      "missing_identity_total": 0,
+      "unsampled_missing_identity": 0,
+      "unrecorded_signature_count": 0,
+      "withdrawn_shells": 0
+    },
+    {
+      "host": "jobs.lear.com",
+      "legacy_failed_counter": 6,
+      "status": "success",
+      "missing_identity_total": 0,
+      "unsampled_missing_identity": 0,
+      "unrecorded_signature_count": 0,
+      "withdrawn_shells": 0
+    },
+    {
+      "host": "mann-hummel-careers.com",
+      "legacy_failed_counter": 1,
+      "status": "failed",
+      "missing_identity_total": 0,
+      "unsampled_missing_identity": 0,
+      "unrecorded_signature_count": 0,
+      "withdrawn_shells": 0
+    },
+    {
+      "host": "opportunities.vodafone.com",
+      "legacy_failed_counter": 0,
+      "status": "success",
+      "missing_identity_total": 0,
+      "unsampled_missing_identity": 0,
+      "unrecorded_signature_count": 0,
+      "withdrawn_shells": 1
+    }
+  ],
+  "totals": {
+    "workday_identity_unknown": 8,
+    "rmk_legacy_counter": 43,
+    "rmk_acquisition_failures_in_counter": 1,
+    "rmk_actual_failed_records": 42,
+    "rmk_sampled_malformed": 27,
+    "rmk_sampled_missing_identity": 3,
+    "rmk_additional_missing_identity_from_aggregate": 1,
+    "rmk_uncaptured_error_signatures": 11,
+    "additional_empty_200_shells": 7,
+    "empty_shell_complete_scopes": [
+      "opportunities.vodafone.com"
+    ]
+  }
+}

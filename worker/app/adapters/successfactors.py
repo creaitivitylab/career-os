@@ -25,9 +25,11 @@ COUNTERS = ("configs_loaded", "facet_calls", "listing_calls", "listing_records",
 
 
 class RMKError(RuntimeError):
-    def __init__(self, kind, message):
+    def __init__(self, kind, message, *, source_identity=None, blocked_transition=None):
         super().__init__(message)
         self.kind = kind
+        self.source_identity = source_identity
+        self.blocked_transition = blocked_transition
 
 
 def public_url(value: Any, base: str | None = None) -> str:
@@ -423,8 +425,6 @@ def parse_detail(url, text, config):
     tenant = js_string(text, "ssoCompanyId")
     if not parsed or parsed["posting_id"] != posting or tenant != config.tenant:
         raise RMKError("missing_identity", "Native RMK detail identity differs from requested tenant/posting")
-    if not isinstance(title, str) or not title.strip() or not isinstance(description, str) or not description.strip():
-        raise RMKError("malformed", "RMK detail lacks native title/description")
     locations = []
     for n in doc.nodes():
         if "PostalAddress" in n.attrs.get("itemtype", ""):
@@ -458,6 +458,9 @@ def parse_detail(url, text, config):
     identity = parse_rmk_url(canonical)
     if not identity or identity["host"] not in config.hosts or identity["posting_id"] != posting:
         raise RMKError("missing_identity", "RMK canonical URL differs from posting identity")
+    if not isinstance(title, str) or not title.strip() or not isinstance(description, str) or not description.strip():
+        raise RMKError("malformed", "RMK detail lacks native title/description",
+                       source_identity=source_job_id(config.tenant, posting))
     req = js_string(text, "internalId")
     return {"posting_id": posting, "tenant": tenant, "internal_requisition_locale_id": req,
             "title": title, "description": description, "url": canonical, "locations": locations,
@@ -485,9 +488,11 @@ class SuccessFactorsAdapter:
 
     def _request(self, method, url, hosts, **kwargs):
         url = public_url(url)
+        previous_host = urlsplit(url).hostname
         for _ in range(4):
             if urlsplit(url).hostname not in hosts:
-                raise RMKError("unsafe_url", "RMK request left its advertised public hosts")
+                raise RMKError("unsafe_url", "RMK request left its advertised public hosts",
+                               blocked_transition={"from_host": previous_host, "to_host": urlsplit(url).hostname})
             try:
                 self.counters["http_requests"] += 1
                 self.counters["get_requests" if method == "GET" else "post_requests"] += 1
@@ -500,6 +505,7 @@ class SuccessFactorsAdapter:
                 if method != "GET":
                     raise RMKError("http", "Public RMK facet request redirected")
                 try:
+                    previous_host = urlsplit(url).hostname
                     url = public_url(response.headers.get("location"), url)
                 except ValueError as exc:
                     raise RMKError("unsafe_url", "Unsafe RMK redirect") from exc

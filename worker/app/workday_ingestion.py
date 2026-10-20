@@ -2,6 +2,7 @@
 import html
 import os
 import re
+import time
 from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any
@@ -15,6 +16,7 @@ from app.adapters.workday import (
 )
 from app.canonical import update_canonical_job
 from app.lifecycle import LifecycleRun, InventoryCompletion
+from app.record_quality import RecordQuality
 from app.operation_budget import commit_inventory
 from app.ingestion import get_or_create_company
 from app.ingestion_status import ALL_TENANTS_FAILED, direct_run_status
@@ -232,8 +234,10 @@ def ingest_workday_jobs(host=None, tenant=None, site=None, max_sites=None, local
             try:
                 lifecycle = LifecycleRun(cur, SOURCE_NAME, run_id)
                 for board in sites:
+                    started = time.monotonic()
                     inventory = lifecycle.scope(board.host, board.tenant, board.site)
                     counters = dict.fromkeys(COUNTERS, 0)
+                    quality = RecordQuality()
                     errors, usable_details, unavailable, native_ids = [], 0, 0, set()
                     result = {"host": board.host, "tenant": board.tenant, "site": board.site}
                     with WorkdayAdapter() as adapter:
@@ -249,7 +253,7 @@ def ingest_workday_jobs(host=None, tenant=None, site=None, max_sites=None, local
                             if exc.error_code == "S22":
                                 counters["s22"] += 1
                             counters["failed"] += 1
-                            result.update(status="failed", error=str(exc), discovery_mode="failed")
+                            result.update(status="failed", kind=exc.kind, error=str(exc), discovery_mode="failed")
                             site_errors.append({**result, "kind": exc.kind})
                         else:
                             counters.update(discovery.counters)
@@ -276,6 +280,8 @@ def ingest_workday_jobs(host=None, tenant=None, site=None, max_sites=None, local
                                         counters[evidence["kind"] + "_jobs"] += 1
                                     usable_details += 1
                                 except WorkdayAPIError as exc:
+                                    if exc.kind != "unavailable":
+                                        quality.protect(inventory, exc)
                                     record_detail_error(counters, errors, path, exc)
                                     unavailable += exc.kind == "unavailable"
                             # Empty/foreign-only catalogs and postings withdrawn with 404
@@ -287,6 +293,9 @@ def ingest_workday_jobs(host=None, tenant=None, site=None, max_sites=None, local
                                 successful_sites += 1
                             else:
                                 site_errors.append({**result, "error": "No listing candidate produced usable detail data"})
+                    quality.failure("listing_missing_path", stage="identity", count=counters["listing_missing_path"])
+                    result["record_quality"] = quality.summary(counters["listing_records"], len(inventory.seen),
+                                                               usable=usable_details)
                     complete = (result.get("status") == "success" and not counters["failed"]
                                 and result.get("discovery_mode") == "fallback"
                                 and not counters["fallback_skipped_foreign"]
@@ -295,7 +304,7 @@ def ingest_workday_jobs(host=None, tenant=None, site=None, max_sites=None, local
                         result.get("status") == "success", complete,
                         "complete unfiltered native inventory" if complete else
                         "filtered geography, failed detail, or uncertain inventory"))
-                    result.update(counters, detail_errors=errors)
+                    result.update(counters, detail_errors=errors, duration_seconds=round(time.monotonic() - started, 3))
                     site_results.append(result)
                     for key in COUNTERS:
                         totals[key] += counters[key]

@@ -131,6 +131,7 @@ def full_complete(run, rmk_gate=None):
 def generate_report(jobs, sources, runs, now, native_hours=72):
     from app.lever_scope_health import load_policy, scope_health_report
     from app.successfactors_scopes import load_scope_gate
+    from app.heavy_scope_health import health_report
     rmk_gate = load_scope_gate()
     policy = load_policy()
     reviewed_gaps = {tuple(r['scope']) for r in policy}
@@ -209,6 +210,7 @@ def generate_report(jobs, sources, runs, now, native_hours=72):
         'direct_verification': complete_sources, 'derived_status_counts': {k: classes[k] for k in ('VERIFIED_ACTIVE', 'CONFIRMED_INACTIVE', 'NEEDS_VERIFICATION')},
         'scope_health': {'lever_direct': scope_health_report(runs, now, policy),
                         'successfactors_direct': ownership_report(by_source['successfactors_direct'], rmk_gate)},
+        'heavy_scope_health': health_report(runs, now),
         'derived_subreason_counts_overlapping': dict(sorted(reasons.items())),
         'lifecycle': {'last_7d_runs': recent_lifecycle,
             'deactivated_last_7d': sum(r['deactivated'] for r in recent_lifecycle),
@@ -268,6 +270,9 @@ def markdown(report):
         '## RMK ownership and coverage gaps', '', '```json', json.dumps(report.get('scope_health', {}).get('successfactors_direct', {}), indent=2, default=str), '```', '',
         'RMK exact and legacy deterministic ownership use the same resolver as lifecycle. Ownership alone does not prove inventory completeness; ambiguous, malformed and unreviewed rows remain unverified.', '',
         'Reviewed gaps are not complete inventories. Availability probes never refresh native verification; expired reviews and unexpected failures require operator action.', '',
+        '## HEAVY acquisition, coverage, lifecycle and record quality', '', '```json',
+        json.dumps(report.get('heavy_scope_health', {}), indent=2, default=str), '```', '',
+        'Reviewed gaps never grant lifecycle authority. Unknown identity, expired review and unexpected coverage changes remain alerts.', '',
         '## Lifecycle', '', '```json', json.dumps(report['lifecycle'], indent=2), '```', '',
         'Canonical closure-event counts are unknown for legacy runs without transition metrics; current closed-with-absence counts are not historical event counts.',
         'Legacy run finished_at may predate actual completion because of PostgreSQL now(); use new runner monotonic summaries for duration.', '']

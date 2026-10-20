@@ -236,6 +236,14 @@ def normalize_outcome(source, result, previous=None, collapse_ratio=0.2, now=Non
         out['anomalies'].append('no_scopes_requested')
     if not complete and requested != len(gaps):
         out['anomalies'].append('no_authoritative_complete_scopes')
+    if source in HEAVY and result.get('site_results'):
+        from app.heavy_scope_health import evaluate_source
+        heavy = evaluate_source(source, result, now)
+        if any(h['native_inventory_complete'] and not h['lifecycle_eligible'] for h in heavy['scopes']):
+            raise ValueError('Unsafe authoritative HEAVY inventory')
+        gap_scopes = sorted(g['scope'] for g in heavy['known_gaps'])
+    else:
+        heavy = None
     comparable = previous and previous.get('known_gap_scopes', []) == gap_scopes
     if previous and not comparable:
         out['volume_comparison'] = 'not_comparable_coverage_changed'
@@ -253,6 +261,19 @@ def normalize_outcome(source, result, previous=None, collapse_ratio=0.2, now=Non
         out['status'] = 'SUCCESS_WITH_KNOWN_GAPS'
     else:
         out['status'] = 'SUCCESS'
+    if heavy is not None:
+        out['heavy_scope_health'] = heavy
+        out['known_gaps'] = heavy['known_gaps']
+        out['known_gap_scopes'] = sorted(g['scope'] for g in heavy['known_gaps'])
+        out['scopes_known_gaps'] = len(heavy['known_gaps'])
+        out['scopes_unexpected_uncomplete'] = sum(not h['native_inventory_complete'] and
+            (not h['known_gap'] or h['alert_worthy']) for h in heavy['scopes'])
+        # An expected lack of global authority is a coverage fact, not an anomaly.
+        if heavy['known_gaps'] and len(heavy['known_gaps']) == requested:
+            out['anomalies'] = [a for a in out['anomalies'] if a != 'no_authoritative_complete_scopes']
+        out['status'] = heavy['status']
+        if out['anomalies'] and out['status'] != 'FAILED':
+            out['status'] = 'PARTIAL'
     out['alert_worthy'] = out['status'] in {'PARTIAL', 'FAILED'}
     return out
 
@@ -269,10 +290,15 @@ def next_baseline(previous, result):
     rows = {(r['source_name'], json.dumps(r.get('request', {}), sort_keys=True)): r
             for r in (previous or {}).get('sources', [])}
     for r in result.get('sources', []):
-        if (r.get('ingestion_status') == 'success' and r.get('scopes_completed', 0) > 0
+        heavy_healthy = (r.get('source_name') in HEAVY and
+            r.get('heavy_scope_health', {}).get('status') in {'SUCCESS', 'SUCCESS_WITH_KNOWN_GAPS'}
+            and r.get('status') in {'SUCCESS', 'SUCCESS_WITH_KNOWN_GAPS'}
+            and not r.get('timeout') and not r.get('anomalies'))
+        if heavy_healthy or ((r.get('source_name') not in HEAVY or 'heavy_scope_health' not in r)
+                and (r.get('ingestion_status') == 'success' and r.get('scopes_completed', 0) > 0
                 and r['scopes_completed'] + r.get('scopes_known_gaps', 0) == r.get('scopes_attempted') and not r.get('errors')
                 and not r.get('failed_records') and not r.get('timeout')
-                and not set(r.get('anomalies', [])) - {'no_authoritative_complete_scopes'}):
+                and not set(r.get('anomalies', [])) - {'no_authoritative_complete_scopes'})):
             key = r['source_name'], json.dumps(r.get('request', {}), sort_keys=True)
             rows[key] = {k: r[k] for k in ('source_name', 'request', 'ingestion_status', 'fetched')}
             if r.get('known_gap_scopes'):
@@ -291,6 +317,9 @@ def run_group(group, config, requests=None, only_source=None, previous=None, exe
     if set(requests) - set(selected):
         raise ValueError('Request does not belong to selected source')
     validated = {s: source_request(s, requests.get(s)) for s in selected}
+    if any(s in HEAVY for s in selected):
+        from app.heavy_scope_health import load_policy
+        load_policy()  # Reject malformed policy before any source transaction.
     result = {'schema_version': 'freshness-run-v1', 'operation_id': str(uuid.uuid4()), 'runner_type': group,
         'started_at': now().isoformat(), 'finished_at': None, 'duration_seconds': 0,
         'sources': [], 'dedupe_enabled': False, 'anomalies': [], 'timeout': False}

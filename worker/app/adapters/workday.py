@@ -245,11 +245,12 @@ def clearly_foreign_listing(record: dict) -> bool:
 
 
 class WorkdayAPIError(RuntimeError):
-    def __init__(self, kind: str, message: str, http_status: int | None = None, error_code: str | None = None):
+    def __init__(self, kind: str, message: str, http_status: int | None = None, error_code: str | None = None, source_identity: str | None = None):
         super().__init__(message)
         self.kind = kind
         self.http_status = http_status
         self.error_code = error_code
+        self.source_identity = source_identity
 
 
 @dataclass
@@ -394,8 +395,6 @@ class WorkdayAdapter:
             source_job_id(board, info.get("id"))
         except ValueError as exc:
             raise WorkdayAPIError("missing_identity", str(exc)) from exc
-        if not isinstance(info.get("title"), str) or not info["title"].strip():
-            raise WorkdayAPIError("malformed", "Workday detail lacks a title")
         url = info.get("externalUrl")
         if url:
             parsed = parse_workday_url(url)
@@ -403,4 +402,7 @@ class WorkdayAdapter:
                 raise WorkdayAPIError("malformed", "Workday detail URL does not match the requested posting")
         if info.get("jobPostingSiteId") and info["jobPostingSiteId"] != board.site:
             raise WorkdayAPIError("malformed", "Workday detail career site does not match")
+        if not isinstance(info.get("title"), str) or not info["title"].strip():
+            raise WorkdayAPIError("malformed", "Workday detail lacks a title",
+                                  source_identity=source_job_id(board, info["id"]))
         return data

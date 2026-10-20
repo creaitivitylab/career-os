@@ -16,6 +16,8 @@ from app.adapters.successfactors import (
 )
 from app.canonical import update_canonical_job
 from app.lifecycle import LifecycleRun, InventoryCompletion
+from app.record_quality import RecordQuality
+from app.heavy_scope_health import load_policy, policy_allows_lifecycle
 from app.rmk_ownership import RMKScopeIdentity
 from app.operation_budget import commit_inventory
 from app.ingestion import get_or_create_company
@@ -175,6 +177,7 @@ def ingest_successfactors_jobs(host=None, brand=None, locale=None, max_sites=Non
     if validated_scopes and any(value is not None for value in (host, brand, locale, max_sites)):
         raise ValueError("Validated-scope mode cannot accept scope or locale overrides")
     gate = load_scope_gate() if validated_scopes else None
+    health_policy = load_policy()
     with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
         with conn.cursor() as cur:
             cur.execute(FANTASTIC_ROWS_SQL)
@@ -204,6 +207,8 @@ def ingest_successfactors_jobs(host=None, brand=None, locale=None, max_sites=Non
                 tenant_scopes = Counter(r.native_tenant for r in load_scope_gate().scopes)
                 for site in sites:
                     inventory = None
+                    quality = RecordQuality()
+                    usable = 0
                     rule = rules.get((site.host, site.brand))
                     site_locale = (None if rule.locale_union else rule.preferred_locale) if rule else locale
                     started = time.monotonic()
@@ -267,6 +272,10 @@ def ingest_successfactors_jobs(host=None, brand=None, locale=None, max_sites=Non
                                         result["ineligible_reasons"][reason] = result["ineligible_reasons"].get(reason, 0) + 1
                                     usable += 1
                                 except RMKError as exc:
+                                    # An empty 200 shell has no proved native identity; a native
+                                    # 404 is a protocol-level absence, not a parser failure.
+                                    if exc.kind != "withdrawn" or str(exc) != "Public RMK HTTP 404":
+                                        quality.protect(inventory, exc)
                                     if listing["posting_id"] in historical:
                                         result["historical_detail_outcomes"][listing["posting_id"]] = {
                                             "status": exc.kind, "reason": str(exc)}
@@ -285,12 +294,19 @@ def ingest_successfactors_jobs(host=None, brand=None, locale=None, max_sites=Non
                         except RMKError as exc:
                             status = "unresolved" if exc.kind == "unresolved" else "unsupported" if exc.kind == "unsupported" else "failed"
                             result.update(status=status, discovery_status=status, kind=exc.kind, error=str(exc))
+                            if exc.blocked_transition:
+                                result["blocked_transition"] = exc.blocked_transition
                             if status == "failed":
                                 counts["failed"] += 1
                             errors.append({"host": site.host, "brand": site.brand, "status": status, "kind": exc.kind, "error": str(exc)})
+                        result["record_quality"] = quality.summary(adapter.counters["listing_records"],
+                            len(inventory.seen) if inventory is not None else 0,
+                            usable=usable)
                         if inventory is not None:
                             complete = (result.get("status") == "success" and rule is not None
-                                        and not counts["failed"] and not adapter.counters["fallback_skipped_foreign"]
+                                        and policy_allows_lifecycle(SOURCE_NAME, result, health_policy)
+                                        and not counts["failed"] and not quality.unknown
+                                        and not adapter.counters["fallback_skipped_foreign"]
                                         and all(m["mode"] == "fallback" for m in modes)
                                         and set(config.advertised_locales).issubset(config.locales)
                                         and tenant_scopes[config.tenant] == 1)
