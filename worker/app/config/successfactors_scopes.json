@@ -480,6 +480,11 @@
       "host": "erstegroup-careers.com",
       "brand": "",
       "reason": "Unresolved Czech current-job discovery; public search does not recover known Czech population"
+    },
+    {
+      "host": "jobs.aldi-hofer.com",
+      "brand": "aldi-karrier-hu",
+      "reason": "Hungary-specific ALDI brand is outside Czech-market acquisition; shared infrastructure does not approve cross-market traversal and the landing exposes no RMK GET search form."
     }
   ]
 }

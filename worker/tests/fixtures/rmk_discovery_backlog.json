@@ -1,0 +1,76 @@
+{
+  "base_commit": "4fa066fbd7bd00142cd0a68f6e3a02ad7d3bae80",
+  "existing_policy_scope_reviews_sha256": "0ac60fc389bccc6d4b0e9e0b8228502a71babce240f1b58f6b540cbf17aed77c",
+  "existing_default_review_sha256": "b6375b74fd5f49e5b203113a669d312abf236e5bb8040907fd064840bc6025b0",
+  "existing_backlog_reviews_sha256": "dd62c0a239ef5c070d9249e08637f06f79fcdb98c5e02a91ea7e28172f933f3a",
+  "validated_rmk_sha256": "c0668c2e9aacc1b829c8f3f2b8b335f75a27257092da2ee0dfe9eae170436b15",
+  "old_excluded_rmk_sha256": "a71558937b3eb3f92e0635640cd379cac0bf2c8d60fd33e605af951a28e755da",
+  "new_scopes": [
+    [
+      "careers.vitra.com",
+      "vitra"
+    ],
+    [
+      "jobs.aldi-hofer.com",
+      "aldi-karrier-hu"
+    ],
+    [
+      "jobs.kws.com",
+      ""
+    ],
+    [
+      "jobs.vetropack.com",
+      ""
+    ]
+  ],
+  "public_evidence": [
+    {
+      "name": "Vitra",
+      "scope": [
+        "careers.vitra.com",
+        "vitra"
+      ],
+      "tenant": "vitraitser",
+      "native_brand": "vitra",
+      "search_url": "https://careers.vitra.com/vitra/search/",
+      "native_total": 16,
+      "first_page_only": true
+    },
+    {
+      "name": "ALDI/HOFER",
+      "scope": [
+        "jobs.aldi-hofer.com",
+        "aldi-karrier-hu"
+      ],
+      "tenant": "HoferSELive",
+      "native_brand": null,
+      "search_url": null,
+      "native_total": null,
+      "first_page_only": true
+    },
+    {
+      "name": "KWS",
+      "scope": [
+        "jobs.kws.com",
+        ""
+      ],
+      "tenant": "kwssaatse",
+      "native_brand": "",
+      "search_url": "https://jobs.kws.com/search/",
+      "native_total": 119,
+      "first_page_only": true
+    },
+    {
+      "name": "Vetropack",
+      "scope": [
+        "jobs.vetropack.com",
+        ""
+      ],
+      "tenant": "vetroconsu",
+      "native_brand": "",
+      "search_url": "https://jobs.vetropack.com/search/",
+      "native_total": 17,
+      "first_page_only": true
+    }
+  ]
+}

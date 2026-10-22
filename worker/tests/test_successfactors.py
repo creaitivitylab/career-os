@@ -578,7 +578,7 @@ class ValidatedScopeTests(unittest.TestCase):
     def test_repository_gate_matches_exact_approved_plan_shape(self):
         gate = load_scope_gate()
         self.assertEqual(len(gate.scopes), 62)
-        self.assertEqual(len(gate.excluded_scopes), 7)
+        self.assertEqual(len(gate.excluded_scopes), 8)
         self.assertEqual(sum(s.locale_union is not None for s in gate.scopes), 1)
         self.assertEqual(sum(len(s.locale_union or [s.preferred_locale]) for s in gate.scopes), 68)
         self.assertEqual(len({(s.native_tenant, s.native_search_brand) for s in gate.scopes}), 62)

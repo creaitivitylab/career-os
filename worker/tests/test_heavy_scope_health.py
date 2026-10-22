@@ -145,7 +145,7 @@ class HeavyPolicyTests(unittest.TestCase):
 
     def test_review_config_bounded(self):
         p=load_policy();self.assertGreater(len(p['scopes']),200)
-        self.assertEqual(len(p['discovery_backlog']),26)
+        self.assertEqual(len(p['discovery_backlog']),30)
 
     def test_review_config_rejects_permanent_suppression(self):
         r=scope();p=policy(review(r,review_expires_at='2030-01-01T00:00:00+00:00'))

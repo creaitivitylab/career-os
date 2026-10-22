@@ -46,6 +46,9 @@ def load_policy(path=POLICY):
                     raise ValueError('Reviewed error must be exact and nonempty')
             elif not isinstance(row.get('coverage_signature'), dict):
                 raise ValueError('Review lacks exact coverage signature')
+        elif (row['source_name'] != 'successfactors_direct'
+              or row.get('category') not in {'unapproved_discovered_scopes', 'excluded_scopes'}):
+            raise ValueError('Invalid RMK discovery backlog category')
         start, end = timestamp(row['reviewed_at']), timestamp(row['review_expires_at'])
         if not timedelta(0) < end - start <= timedelta(days=31) or not row['reason'] or not row['evidence']:
             raise ValueError('Invalid bounded HEAVY review')
@@ -54,6 +57,20 @@ def load_policy(path=POLICY):
 
 def review_valid(row, now):
     return bool(row and timestamp(row['reviewed_at']) <= now < timestamp(row['review_expires_at']))
+
+
+def discovery_review_matches(row, review, category):
+    """A backlog review covers exact reported telemetry, never remote authority.
+
+    New host/brand/category, changed exclusion reason, or new coverage fields
+    require review. We do not fetch quarantined catalogs to invent this proof.
+    """
+    if not review:
+        return False
+    expected = {'host': review['scope'][0], 'brand': review['scope'][1]}
+    if category == 'excluded_scopes':
+        expected['reason'] = review['reason']
+    return row == expected
 
 
 def scope_key(source, row):
@@ -217,12 +234,16 @@ def evaluate_source(source, result, now=None, policy=None):
         for category in ('unapproved_discovered_scopes', 'excluded_scopes'):
             for row in result.get(category, []):
                 key = [row['host'], row.get('brand', '')]
-                review = next((r for r in policy['discovery_backlog'] if r['scope'] == key and r['category'] == category), None)
-                valid = review_valid(review, now)
-                # Changed exclusion reason is new evidence, not an automatic approval.
-                valid = valid and (category != 'excluded_scopes' or review['reason'] == row.get('reason'))
-                backlog.append({'scope': key, 'category': category, 'state': 'NEEDS_REVIEW', 'review': review,
-                                'alert_worthy': not valid, 'lifecycle_eligible': False})
+                review = next((r for r in policy['discovery_backlog']
+                    if r['source_name'] == source and r['scope'] == key and r['category'] == category), None)
+                valid = review_valid(review, now) and discovery_review_matches(row, review, category)
+                backlog.append({'scope': key, 'category': category,
+                                'state': review['state'] if review else 'NEEDS_REVIEW', 'review': review,
+                                'review_current': review_valid(review, now), 'known_gap': valid,
+                                'coverage': 'NON_AUTHORITATIVE_EXPECTED' if valid else 'UNKNOWN',
+                                'acquisition_allowed': False, 'lifecycle_eligible': False,
+                                'alert_worthy': not valid,
+                                'reason': review['reason'] if valid else 'New, changed or expired discovery requires review'})
                 if not valid:
                     alerts.append('new_or_expired_discovery_backlog')
     unexpected = bool(alerts or any(h['alert_worthy'] for h in health))
